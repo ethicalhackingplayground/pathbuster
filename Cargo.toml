@@ -11,14 +11,14 @@ repository = "https://github.com/ethicalhackingplayground/pathbuster"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-governor = "*"
-futures = "*"
-futures-util = "*"
+governor = "0.5.1"
+futures = "0.3.26"
+futures-util = "0.3.26"
 tokio = { version = "^1.2.0", features = ["full"] }
 colored = { version = "2.0.0" }
-indicatif = "*"
-spmc = "*"
+indicatif = "0.17.3"
+spmc = "0.3.0"
 clap =  { version = "^3.0.0-beta.2" }
-reqwest = { version = "*", features = ["native-tls", "blocking"] }
+reqwest = { version = "0.11.14", features = ["native-tls", "blocking"] }
 levenshtein = "1.0.5"
-urlencoding = "*"
+urlencoding = "2.1.2"
