@@ -44,6 +44,7 @@ struct JobSettings {
 struct Job {
     settings: Option<JobSettings>,
     url: Option<String>,
+    path: Option<String>,
     payload: Option<String>,
     word: Option<String>,
 }
@@ -121,7 +122,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             .short('r')
             .long("rate")
             .takes_value(true)
-            .default_value("150")
+            .default_value("1000")
             .help("Maximum in-flight requests per second")
         )
         .arg(
@@ -149,6 +150,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             .help("the file containing the traversal payloads")
         )
         .arg(
+            Arg::with_name("paths")
+            .long("paths")
+            .required(true)
+            .takes_value(true)
+            .default_value(".paths.tmp")
+            .help("The list of routes (crawl the host to collect routes)")
+        )
+        .arg(
             Arg::with_name("deviation")
             .long("deviation")
             .required(true)
@@ -168,7 +177,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             Arg::with_name("concurrency")
                 .short('c')
                 .long("concurrency")
-                .default_value("50")
+                .default_value("100")
                 .takes_value(true)
                 .help("The amount of concurrent requests"),
         )
@@ -203,16 +212,16 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     let rate = match matches.value_of("rate").unwrap().parse::<u32>() {
         Ok(n) => n,
         Err(_) => {
-            pb.println("could not parse rate, using default of 150");
-            150
+            pb.println("could not parse rate, using default of 1000");
+            1000
         }
     };
 
     let concurrency = match matches.value_of("concurrency").unwrap().parse::<u32>() {
         Ok(n) => n,
         Err(_) => {
-            pb.println("could not parse concurrency, using default of 50");
-            50
+            pb.println("could not parse concurrency, using default of 100");
+            100
         }
     };
     
@@ -258,6 +267,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         None => {
            "".to_string()
         },
+    };
+
+    let paths_path = match matches.get_one::<String>("paths").map(|s| s.to_string()) {
+        Some(paths_path) => paths_path,
+        None => {
+            "".to_string()
+        }
     };
 
     let match_status = match matches.get_one::<String>("match-status").map(|s| s.to_string()) {
@@ -316,9 +332,16 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             exit(1);
         }
     };
-
     let wordlists_handle = match File::open(wordlist_path).await {
         Ok(wordlists_handle) => wordlists_handle,
+        Err(e) => {
+            pb.println(format!("failed to open input file: {:?}", e));
+            exit(1);
+        }
+    };
+    // define the file handle for the wordlists.
+    let paths_handle = match File::open(paths_path).await {
+        Ok(paths_handle) => paths_handle,
         Err(e) => {
             pb.println(format!("failed to open input file: {:?}", e));
             exit(1);
@@ -340,23 +363,45 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     let mut wordlist_lines = wordlist_buf.lines();
     let mut wordlists = vec![];
 
+    let paths_buf = BufReader::new(paths_handle);
+    let mut path_lines = paths_buf.lines();
+    let mut paths = vec![];
+
     while let Ok(Some(words)) = wordlist_lines.next_line().await {
         wordlists.push(words);
     }
     while let Ok(Some(payload)) = payload_lines.next_line().await {
+        let _payload = encode(&payload.to_string()).to_string();
+        payloads.push(_payload);
         payloads.push(payload);
     }
+    while let Ok(Some(path)) = path_lines.next_line().await {
+        paths.push(path);
+    }
 
+    // append some more payloads
     for i in 0u8..=255 {
         let _char = i as char;
         let _payload = encode(&_char.to_string()).to_string();
-        payloads.push(_payload.to_string());
+        // single url encoding bypass
+        if _payload.contains("%") {
+            payloads.push(_payload.to_string());
+        }
+        // double url encoding bypass
+        let _payload = encode(&_payload.to_string()).to_string();
+        if _payload.contains("%") {
+            payloads.push(_payload.to_string());
+        }
     }
+
+
+    // print the number of generated payloads.
+    println!("{}{}{} Generated {} payloads", "[".bold().white(), "+".bold().green(), "]".bold().white(), payloads.len().to_string().bold().white());
 
 
     // spawn our workers 
     rt.spawn(async move {
-        send_url(job_tx, url_arg.to_string(), wordlists, payloads, rate, match_status, deviation, stop_at_match).await
+        send_url(job_tx, url_arg.to_string(), paths, wordlists, payloads, rate, match_status, deviation, stop_at_match).await
     });
     let out_pb = pb.clone();
     rt.spawn(async move {
@@ -395,7 +440,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
 
 // this function will test for open redirect vulnerabilities
-async fn send_url(mut tx:spmc::Sender<Job>, url: String, wordlists:Vec<String>, payloads:Vec<String>, rate:u32, match_status:String, deviation:String, stop_at_match:bool) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+async fn send_url(mut tx:spmc::Sender<Job>, url: String, paths:Vec<String>, wordlists:Vec<String>, payloads:Vec<String>, rate:u32, match_status:String, deviation:String, stop_at_match:bool) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     //set rate limit
     let lim = RateLimiter::direct(Quota::per_second(std::num::NonZeroU32::new(rate).unwrap()));
@@ -410,53 +455,60 @@ async fn send_url(mut tx:spmc::Sender<Job>, url: String, wordlists:Vec<String>, 
 
     // only fuzz with wordlists, if the payloads are not defined
     if payloads.is_empty() {
-        for word in wordlists.iter() {
-            let msg = Job {
-                settings: Some(job_settings.clone()),
-                url: Some(url.clone()),
-                payload: Some("".to_string()),
-                word: Some(word.clone()),
-            };
-            if let Err(_) = tx.send(msg) {
-                continue;
+        for path in paths.iter() {
+            for word in wordlists.iter() {
+                let msg = Job {
+                    path: Some(path.clone()),
+                    settings: Some(job_settings.clone()),
+                    url: Some(url.clone()),
+                    payload: Some("".to_string()),
+                    word: Some(word.clone()),
+                };
+                if let Err(_) = tx.send(msg) {
+                    continue;
+                }
             }
-            lim.until_ready().await;
         }
     }
 
 
     // only fuzz with payloads, if the wordlists are not defined
     if wordlists.is_empty() {
-        for payload in payloads.iter() {
-            let msg = Job {
-                settings: Some(job_settings.clone()),
-                url: Some(url.clone()),
-                payload: Some(payload.to_string()),
-                word: Some("".to_string()),
-            };
-            if let Err(_) = tx.send(msg) {
-                continue;
+        for path in paths.iter() {
+            for payload in payloads.iter() {
+                let msg = Job {
+                    path: Some(path.clone()),
+                    settings: Some(job_settings.clone()),
+                    url: Some(url.clone()),
+                    payload: Some(payload.to_string()),
+                    word: Some("".to_string()),
+                };
+                if let Err(_) = tx.send(msg) {
+                    continue;
+                }
             }
-            lim.until_ready().await;
         }
     }
 
 
     // fuzz using both payloads and wordlists, if they are both defined
-    for payload in payloads.iter() {
-        for word in wordlists.iter() {
-            let msg = Job {
-                settings: Some(job_settings.clone()),
-                url: Some(url.clone()),
-                payload: Some(payload.clone()),
-                word: Some(word.clone()),
-            };
-            if let Err(_) = tx.send(msg) {
-                continue;
+    for path in paths.iter() {
+        for payload in payloads.iter() {
+            for word in wordlists.iter() {
+                let msg = Job {
+                    path: Some(path.clone()),
+                    settings: Some(job_settings.clone()),
+                    url: Some(url.clone()),
+                    payload: Some(payload.clone()),
+                    word: Some(word.clone()),
+                };
+                if let Err(_) = tx.send(msg) {
+                    continue;
+                }
             }
-            lim.until_ready().await;
         }
     }
+    lim.until_ready().await;
     Ok(())
 }
 
@@ -487,142 +539,156 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
         let job_url = job.url.unwrap();
         let job_word = job.word.unwrap();
         let job_payload = job.payload.unwrap();
+        let job_path = job.path.unwrap();
         let job_settings = job.settings.unwrap();
+        let job_path_new = job_path.clone();
+        let job_payload_new = job_payload.clone();
+        let job_url_new = job_url.clone();
 
         pb.inc(1);
 
-        let mut url = String::from("");
-        let mut _new_url = String::from("");
-        if job_payload.is_empty() == false {
-            _new_url = job_url.replace("{payload}", &job_payload);
-        }
-        if job_word.is_empty() == false {
-            _new_url = job_url.replace("{word}", &job_word);
-        }
-                                      
-        url.push_str(&_new_url);
-        let print_url = url.clone();
-        
-        let get = client.get(url);
-        let req = match get.build() {
-            Ok(req) => req,
-            Err(_) => continue,
-        };
+        let mut _path = String::from(job_path);
+        let mut _payload = String::from(job_payload);
+        let path_cnt = job_path_new.split("/").count() + 5;
+        for _ in 0..path_cnt {
 
+            let mut _new_url = String::from(&job_url_new);
+            if job_payload_new.is_empty() == false {
+                _new_url = _new_url.replace("{payloads}", &_payload);
+            }
+            if job_word.is_empty() == false {
+                _new_url = _new_url.replace("{words}", &job_word);
+            }
+            if job_path_new.is_empty() == false {
+                _new_url = _new_url.replace("{paths}", &job_path_new);
+            }
 
-        let resp = match client.execute(req).await {
-            Ok(resp) => resp,
-            Err(_) => continue,
-        };
-
-
-        let content_length = match resp.content_length() {
-            Some(content_length) => content_length.to_string(),
-            None => {
-                ""
-            }.to_owned(),
-        };
-        let out_url = print_url.clone();
-        if resp.status().to_string().contains(&job_settings.match_status) && content_length.is_empty() == false {
-
-            let parsed_url = match reqwest::Url::parse(&print_url) {
-                Ok(parsed_url) => parsed_url,
-                Err(e) => {
-                    pb.println(format!("There is an error parsing the URL: {:?}", e));
-                    continue;
-                },
-            };
-
-            let mut new_url = String::from("");
-            new_url.push_str(parsed_url.scheme());
-            new_url.push_str("://");
-            new_url.push_str(parsed_url.host_str().unwrap());
-            new_url.push_str("/");
-            new_url.push_str(&job_word);
-
-            let get = client.get(new_url);
+            let mut url = String::from("");                                        
+            url.push_str(&_new_url);
+            let print_url = url.clone();
+            
+            let get = client.get(url);
             let req = match get.build() {
                 Ok(req) => req,
                 Err(_) => continue,
             };
-    
-    
-            let web_root_resp = match client.execute(req).await {
-                Ok(web_root_resp) => web_root_resp,
+
+
+            let resp = match client.execute(req).await {
+                Ok(resp) => resp,
                 Err(_) => continue,
             };
 
-            let web_root_content_length = match web_root_resp.content_length() {
-                Some(web_root_content_length) => web_root_content_length.to_string(),
-                None => "".to_string(),
+
+            let content_length = match resp.content_length() {
+                Some(content_length) => content_length.to_string(),
+                None => {
+                    ""
+                }.to_owned(),
             };
+            let out_url = print_url.clone();
+            if resp.status().to_string().contains(&job_settings.match_status) && content_length.is_empty() == false {
 
-            let response_deviation = levenshtein(&web_root_content_length, &content_length);
-            let deviation = match job_settings.deviation.parse::<usize>() {
-                Ok(deviation) => deviation,
-                Err(_) => continue,
-            };
-
-            if response_deviation >= deviation {
-                if resp.status().is_client_error() {
-                    pb.println(format!("{}{}{} {}{}{} {}{}{}",  "[".bold().white(), resp.status().as_str().bold().blue(), "]".bold().white(), 
-                                                                    "[".bold().white(), content_length.dimmed().white(), "]".bold().white(), 
-                                                                    "[".bold().white(), print_url.bold().cyan(), "]".bold().white()));
-
-                    if job_settings.stop_at_match == true {
-                        break;
-                    }
-                }
-        
-                if resp.status().is_success() {
-                    pb.println(format!("{}{}{} {}{}{} {}{}{}",  "[".bold().white(), resp.status().as_str().bold().green(), "]".bold().white(), 
-                                                                    "[".bold().white(), content_length.dimmed().white(), "]".bold().white(), 
-                                                                    "[".bold().white(), print_url.bold().cyan(), "]".bold().white()));
-                    if job_settings.stop_at_match == true {
-                        break;
-                    }
-                }
-        
-                if resp.status().is_redirection() {
-                    pb.println(format!("{}{}{} {}{}{} {}{}{}",  "[".bold().white(), resp.status().as_str().bold().cyan(), "]".bold().white(), 
-                                                                    "[".bold().white(), content_length.dimmed().white(), "]".bold().white(), 
-                                                                    "[".bold().white(), print_url.bold().cyan(), "]".bold().white()));
-
-                    if job_settings.stop_at_match == true {
-                        break;
-                    }
-                }
-        
-                if resp.status().is_server_error() {
-                    pb.println(format!("{}{}{} {}{}{} {}{}{}",  "[".bold().white(), resp.status().as_str().bold().red(), "]".bold().white(), 
-                                                                    "[".bold().white(), content_length.dimmed().white(), "]".bold().white(), 
-                                                                    "[".bold().white(), print_url.bold().cyan(), "]".bold().white()));
-
-                    if job_settings.stop_at_match == true {
-                        break;
-                    }
-                }
-    
-                        
-                if resp.status().is_informational() {
-                    pb.println(format!("{}{}{} {}{}{} {}{}{}",  "[".bold().white(), resp.status().as_str().bold().purple(), "]".bold().white(), 
-                                                                    "[".bold().white(), content_length.dimmed().white(), "]".bold().white(), 
-                                                                    "[".bold().white(), print_url.bold().cyan(), "]".bold().white()));
-
-                    if job_settings.stop_at_match == true {
-                        break;
-                    }
-                }
-    
-                 // send the result message through the channel to the workers.
-                let result_msg = JobResult {
-                    data: out_url,
+                let parsed_url = match reqwest::Url::parse(&print_url) {
+                    Ok(parsed_url) => parsed_url,
+                    Err(e) => {
+                        pb.println(format!("There is an error parsing the URL: {:?}", e));
+                        continue;
+                    },
                 };
-                if let Err(_) = tx.send(result_msg).await {
-                    continue;
+
+                let mut new_url = String::from("");
+                new_url.push_str(parsed_url.scheme());
+                new_url.push_str("://");
+                new_url.push_str(parsed_url.host_str().unwrap());
+                new_url.push_str("/");
+                new_url.push_str(&job_word);
+
+                let get = client.get(new_url);
+                let req = match get.build() {
+                    Ok(req) => req,
+                    Err(_) => continue,
+                };
+        
+        
+                let web_root_resp = match client.execute(req).await {
+                    Ok(web_root_resp) => web_root_resp,
+                    Err(_) => continue,
+                };
+
+                let web_root_content_length = match web_root_resp.content_length() {
+                    Some(web_root_content_length) => web_root_content_length.to_string(),
+                    None => "".to_string(),
+                };
+
+                let response_deviation = levenshtein(&web_root_content_length, &content_length);
+                let deviation = match job_settings.deviation.parse::<usize>() {
+                    Ok(deviation) => deviation,
+                    Err(_) => continue,
+                };
+
+                if response_deviation >= deviation {
+                    if resp.status().is_client_error() {
+                        pb.println(format!("{}{}{} {}{}{} {}{}{}",  "[".bold().white(), resp.status().as_str().bold().blue(), "]".bold().white(), 
+                                                                        "[".bold().white(), content_length.dimmed().white(), "]".bold().white(), 
+                                                                        "[".bold().white(), print_url.bold().cyan(), "]".bold().white()));
+
+                        if job_settings.stop_at_match == true {
+                            break;
+                        }
+                    }
+            
+                    if resp.status().is_success() {
+                        pb.println(format!("{}{}{} {}{}{} {}{}{}",  "[".bold().white(), resp.status().as_str().bold().green(), "]".bold().white(), 
+                                                                        "[".bold().white(), content_length.dimmed().white(), "]".bold().white(), 
+                                                                        "[".bold().white(), print_url.bold().cyan(), "]".bold().white()));
+                        if job_settings.stop_at_match == true {
+                            break;
+                        }
+                    }
+            
+                    if resp.status().is_redirection() {
+                        pb.println(format!("{}{}{} {}{}{} {}{}{}",  "[".bold().white(), resp.status().as_str().bold().cyan(), "]".bold().white(), 
+                                                                        "[".bold().white(), content_length.dimmed().white(), "]".bold().white(), 
+                                                                        "[".bold().white(), print_url.bold().cyan(), "]".bold().white()));
+
+                        if job_settings.stop_at_match == true {
+                            break;
+                        }
+                    }
+            
+                    if resp.status().is_server_error() {
+                        pb.println(format!("{}{}{} {}{}{} {}{}{}",  "[".bold().white(), resp.status().as_str().bold().red(), "]".bold().white(), 
+                                                                        "[".bold().white(), content_length.dimmed().white(), "]".bold().white(), 
+                                                                        "[".bold().white(), print_url.bold().cyan(), "]".bold().white()));
+
+                        if job_settings.stop_at_match == true {
+                            break;
+                        }
+                    }
+        
+                            
+                    if resp.status().is_informational() {
+                        pb.println(format!("{}{}{} {}{}{} {}{}{}",  "[".bold().white(), resp.status().as_str().bold().purple(), "]".bold().white(), 
+                                                                        "[".bold().white(), content_length.dimmed().white(), "]".bold().white(), 
+                                                                        "[".bold().white(), print_url.bold().cyan(), "]".bold().white()));
+
+                        if job_settings.stop_at_match == true {
+                            break;
+                        }
+                    }
+        
+                    // send the result message through the channel to the workers.
+                    let result_msg = JobResult {
+                        data: out_url,
+                    };
+                    if let Err(_) = tx.send(result_msg).await {
+                        continue;
+                    }
+                    pb.inc_length(1);
                 }
-                pb.inc_length(1);
             }
+            _payload.push_str(&job_payload_new);
         }
     }
 }
