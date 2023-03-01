@@ -1,6 +1,6 @@
 [package]
 name = "pathbuster"
-authors = ["zoid"]
+authors = ["zoid", "<blake@cyberlix.io>"]
 description = "A path-normalization pentesting tool using path replacements."
 version = "0.1.0"
 edition = "2021"
