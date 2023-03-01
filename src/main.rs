@@ -158,7 +158,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         )
         .arg(
             Arg::with_name("wordlist")
-            .short('w')
             .long("wordlist")
             .required(false)
             .takes_value(true)
