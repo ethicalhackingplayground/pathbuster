@@ -26,6 +26,8 @@
   <a href="https://discord.gg/MQWCem5b">Join Discord</a> 
 </p>
 
+---
+
 ### Todos
 
 - [ ] Implement multiple host scanning using the replacement `{hosts}`.
