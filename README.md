@@ -20,7 +20,7 @@ cargo add pathbuster
 ## Usage
 
 ```bash
-pathbuster 1.0
+pathbuster 0.1.2
 Blake Jacobs <blake@cyberlix.io
 path-normalization pentesting tool
 
