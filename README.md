@@ -22,7 +22,7 @@ cargo add pathbuster
 pathbuster -u "https://example.com/api/{payload}" -p payloads\traversals.txt --deviation 2 -o output.txt
 ```
 
-![Screenshot](static/carbon.png)
+![Screenshot](static/example.png)
 
 
 ## Contributing
