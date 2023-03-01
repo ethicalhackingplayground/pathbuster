@@ -2,6 +2,27 @@
 
 A path-normalization pentesting tool using path replacements.
 
+<p align="center">
+  <a href="/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg"/></a>
+  <a href="http://golang.org"><img src="https://img.shields.io/badge/Made%20with-Go-1f425f.svg"/></a>
+  <a href="https://github.com/ethicalhackingplayground/pathmapper/issues"><img src="https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat"></a>
+  <a href="https://twitter.com/z0idsec"><img src="https://img.shields.io/twitter/follow/z0idsec.svg?logo=twitter"></a>
+  <a href="https://discord.gg/MQWCem5b"><img src="https://img.shields.io/discord/862900124740616192.svg?logo=discord"></a>
+  <br>
+  <b>All your proxies are belong to us</b>
+</p>
+
+---
+
+<p align="center">
+  <a href="#installation">Installation</a> •
+  <a href="#usage">Usage</a> •
+  <a href="#examples">Examples</a> •
+  <a href="#contributing">Contributing</a> •
+  <a href="#license">License</a> •
+  <a href="https://discord.gg/MQWCem5b">Join Discord</a> 
+</p>
+
 ## Installation
 
 Install rust
@@ -19,17 +40,20 @@ cargo add pathbuster
 
 ## Usage
 
-```bash
-pathbuster 0.1.2
-Blake Jacobs <blake@cyberlix.io
-path-normalization pentesting tool
+```sh
+pathbuster -h
+```
 
+<details>
+<summary> 👉 pathbuster help menu 👈</summary>
+
+```
 USAGE:
-    pathbuster [OPTIONS] --url <url> --payloads <payloads> --deviation <deviation>
+    pathbuster [OPTIONS] --url <url> --payloads <payloads> --paths <paths> --deviation <deviation>
 
 OPTIONS:
     -c, --concurrency <concurrency>
-            The amount of concurrent requests [default: 50]
+            The amount of concurrent requests [default: 100]
 
         --deviation <deviation>
             The distance between the responses [default: 3]
@@ -46,8 +70,11 @@ OPTIONS:
     -p, --payloads <payloads>
             the file containing the traversal payloads [default: ]
 
+        --paths <paths>
+            The list of routes (crawl the host to collect routes) [default: .paths.tmp]
+
     -r, --rate <rate>
-            Maximum in-flight requests per second [default: 150]
+            Maximum in-flight requests per second [default: 1000]
 
         --stop-at-first-match <stop-at-first-match>
             stops execution flow on the first match [default: false]
@@ -70,21 +97,13 @@ OPTIONS:
 Fingerprinting the proxy
 
 ```rust
-$ pathbuster -u "https://example.com/api/{payload}/{payload}" -p traversals.txt --match-status 400 --deviation 2 -o output.txt
-```
-
-Directory Bruteforcing
-
-```rust
-$ pathbuster -u "https://example.com/api/{word}" --wordlist wordlist.txt --match-status 200 --deviation 2 -o output.txt
+$ pathbuster -u "https://example.com/{paths}/{payloads}" --payloads traversals.txt --paths paths.txt --match-status 400 --deviation 2 -o output.txt
 ```
 
 Discovery Process
 
 ```rust
-$ pathbuster -u "https://example.com/api/v1/{payload}/{payload}/{payload}" -p traversals.txt --match-status 400,500 --deviation 2 -o paths.txt
-$ pathbuster -u "https://example.com/api/v1/{payload}/{payload}" -p traversals.txt --match-status 404 --deviation 2 -o paths.txt
-$ pathbuster -u "https://example.com/api/v1/{payload}/{payload}/{word}" -p traversals.txt --wordlist wordlist.txt --match-status 200 --deviation 2 -o paths.txt
+$ pathbuster -u "https://example.com/{paths}/{payloads}/{words}" --payloads traversals.txt --paths paths.txt --wordlist raft-medium-directories.txt --match-status 200 --deviation 2 -o output.txt
 ```
 
 ![Screenshot](static/example.png)
@@ -99,4 +118,8 @@ Please make sure to update tests as appropriate.
 
 ## License
 
-[MIT](https://choosealicense.com/licenses/mit/)
+Pathbuster is distributed under [MIT License](https://github.com/ethicalhackingplayground/pathbuster/blob/main/LICENSE)
+
+<h1 align="left">
+  <a href="https://discord.gg/MQWCem5b"><img src="static/Join-Discord.png" width="380" alt="Join Discord"></a>
+</h1>
