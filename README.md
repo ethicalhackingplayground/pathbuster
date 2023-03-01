@@ -7,8 +7,8 @@
 
 <p align="center">
   <a href="/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg"/></a>
-  <a href="http://golang.org"><img src="https://img.shields.io/badge/Made%20with-Go-1f425f.svg"/></a>
-  <a href="https://github.com/ethicalhackingplayground/pathmapper/issues"><img src="https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat"></a>
+  <a href="http://golang.org"><img src="https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white"/></a>
+  <a href="https://github.com/ethicalhackingplayground/pathmbuster/issues"><img src="https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat"></a>
   <a href="https://twitter.com/z0idsec"><img src="https://img.shields.io/twitter/follow/z0idsec.svg?logo=twitter"></a>
   <a href="https://discord.gg/MQWCem5b"><img src="https://img.shields.io/discord/862900124740616192.svg?logo=discord"></a>
   <br>
