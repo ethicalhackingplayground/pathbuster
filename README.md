@@ -1,6 +1,9 @@
-# pathbuster
 
-A path-normalization pentesting tool using path replacements.
+<h1 align="center">pathbuster
+  <br>
+</h1>
+
+<h4 align="center">A path-normalization pentesting tool using path replacements.</h4>
 
 <p align="center">
   <a href="/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg"/></a>
