@@ -439,7 +439,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
 
 
-// this function will test for open redirect vulnerabilities
+// this function will send the jobs to the workers
 async fn send_url(mut tx:spmc::Sender<Job>, url: String, paths:Vec<String>, wordlists:Vec<String>, payloads:Vec<String>, rate:u32, match_status:String, deviation:String, stop_at_match:bool) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     //set rate limit
