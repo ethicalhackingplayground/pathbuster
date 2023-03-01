@@ -42,7 +42,7 @@ cargo add pathbuster
 
 ## Usage
 
-```sh
+```bash
 pathbuster -h
 ```
 
@@ -94,6 +94,8 @@ OPTIONS:
             the file containing the technology paths [default: .wordlist.tmp]
 ```
 
+</details>
+
 ## Examples
 
 Fingerprinting the proxy
@@ -121,7 +123,3 @@ Please make sure to update tests as appropriate.
 ## License
 
 Pathbuster is distributed under [MIT License](https://github.com/ethicalhackingplayground/pathbuster/blob/main/LICENSE)
-
-<h1 align="left">
-  <a href="https://discord.gg/MQWCem5b"><img src="static/Join-Discord.png" width="380" alt="Join Discord"></a>
-</h1>
