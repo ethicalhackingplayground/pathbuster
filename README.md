@@ -59,7 +59,7 @@ This command will show the tool's help information and present a list of all the
 
 ```
 USAGE:
-    pathbuster.exe [OPTIONS] --url <url> --payloads <payloads> --paths <paths> --deviation <deviation>
+    pathbuster [OPTIONS] --url <url> --payloads <payloads> --paths <paths> --deviation <deviation>
 
 OPTIONS:
     -c, --concurrency <concurrency>
@@ -114,10 +114,16 @@ Fingerprinting the proxy
 $ pathbuster -u "https://example.com/{paths}/{payloads}" --payloads traversals.txt --paths paths.txt --match-status 400 --deviation 2 -o output.txt
 ```
 
-Discovery Process
+Discovery Process For A Single URL
 
 ```rust
 $ pathbuster -u "https://example.com/{paths}/{payloads}/{words}" --payloads traversals.txt --paths paths.txt --wordlist raft-medium-directories.txt --match-status 200 --deviation 2 -o output.txt
+```
+
+Discovery Process Using Host Replacements
+
+```rust
+$ pathbuster -u "https://{hosts}/{paths}/{payloads}/{words}" --payloads roots.txt --payloads traversals.txt --paths paths.txt --wordlist raft-medium-directories.txt --match-status 200 --deviation 2 -o output.txt
 ```
 
 ![Screenshot](static/example.png)
