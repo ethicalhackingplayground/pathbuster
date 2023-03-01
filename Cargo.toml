@@ -2,7 +2,7 @@
 name = "pathbuster"
 authors = ["zoid", "<blake@cyberlix.io>"]
 description = "A path-normalization pentesting tool using path replacements."
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/ethicalhackingplayground/pathbuster"
