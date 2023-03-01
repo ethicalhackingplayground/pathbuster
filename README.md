@@ -123,7 +123,7 @@ $ pathbuster -u "https://example.com/{paths}/{payloads}/{words}" --payloads trav
 Discovery process using host replacements
 
 ```rust
-$ pathbuster -u "https://{hosts}/{paths}/{payloads}/{words}" --payloads roots.txt --payloads traversals.txt --paths paths.txt --wordlist raft-medium-directories.txt --match-status 200 --deviation 2 -o output.txt
+$ pathbuster -u "https://{hosts}/{paths}/{payloads}/{words}" --hosts roots.txt --payloads traversals.txt --paths paths.txt --wordlist raft-medium-directories.txt --match-status 200 --deviation 2 -o output.txt
 ```
 
 ![Screenshot](static/example.png)
