@@ -43,6 +43,7 @@ struct JobSettings {
 #[derive(Clone, Debug)]
 struct Job {
     settings: Option<JobSettings>,
+    host: Option<String>,
     url: Option<String>,
     path: Option<String>,
     payload: Option<String>,
@@ -64,7 +65,7 @@ fn print_banner() {
   / /_/ / /_/ / /_/ / / / /_/ / /_/ (__  ) /_/  __/ /    
  / .___/\__,_/\__/_/ /_/_.___/\__,_/____/\__/\___/_/     
 /_/                                                          
-                                v0.1.3                                   
+                                v0.1.4                                   
     "#;
     println!("{}", BANNER.white().bold());
     println!(
@@ -142,28 +143,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         )
         .arg(
             Arg::with_name("payloads")
-            .short('p')
             .long("payloads")
             .required(true)
             .takes_value(true)
             .default_value("")
             .help("the file containing the traversal payloads")
-        )
-        .arg(
-            Arg::with_name("paths")
-            .long("paths")
-            .required(true)
-            .takes_value(true)
-            .default_value(".paths.tmp")
-            .help("The list of routes (crawl the host to collect routes)")
-        )
-        .arg(
-            Arg::with_name("deviation")
-            .long("deviation")
-            .required(true)
-            .takes_value(true)
-            .default_value("3")
-            .help("The distance between the responses")
         )
         .arg(
             Arg::with_name("wordlist")
@@ -172,6 +156,30 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             .takes_value(true)
             .default_value(".wordlist.tmp")
             .help("the file containing the technology paths")
+        )
+        .arg(
+            Arg::with_name("hosts")
+            .long("hosts")
+            .required(false)
+            .takes_value(true)
+            .default_value(".hosts.tmp")
+            .help("the file containing the list of root domains")
+        )
+        .arg(
+            Arg::with_name("paths")
+            .long("paths")
+            .required(true)
+            .takes_value(true)
+            .default_value(".paths.tmp")
+            .help("the file containing the list of routes (crawl the host to collect routes)")
+        )
+        .arg(
+            Arg::with_name("deviation")
+            .long("deviation")
+            .required(true)
+            .takes_value(true)
+            .default_value("3")
+            .help("The distance between the responses")
         )
         .arg(
             Arg::with_name("concurrency")
@@ -275,14 +283,18 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             "".to_string()
         }
     };
-
+    let hosts_path = match matches.get_one::<String>("hosts").map(|s| s.to_string()) {
+        Some(hosts_path) => hosts_path,
+        None => {
+            "".to_string()
+        }
+    };
     let match_status = match matches.get_one::<String>("match-status").map(|s| s.to_string()) {
         Some(match_status) => match_status,
         None => {
             "".to_string()
         }
     };
-
     let outfile_path = match matches.value_of("out") {
         Some(outfile_path) => outfile_path,
         None => {
@@ -290,6 +302,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             exit(1);
         }
     };
+
     
     let outfile_handle = match OpenOptions::new()
         .create(true)
@@ -339,6 +352,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             exit(1);
         }
     };
+    let hosts_handle = match File::open(hosts_path).await {
+        Ok(hosts_handle) => hosts_handle,
+        Err(e) => {
+            pb.println(format!("failed to open input file: {:?}", e));
+            exit(1);
+        }
+    };
     // define the file handle for the wordlists.
     let paths_handle = match File::open(paths_path).await {
         Ok(paths_handle) => paths_handle,
@@ -367,6 +387,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     let mut path_lines = paths_buf.lines();
     let mut paths = vec![];
 
+    
+    let hosts_buf = BufReader::new(hosts_handle);
+    let mut host_lines = hosts_buf.lines();
+    let mut hosts = vec![];
+
     while let Ok(Some(words)) = wordlist_lines.next_line().await {
         wordlists.push(words);
     }
@@ -377,6 +402,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     }
     while let Ok(Some(path)) = path_lines.next_line().await {
         paths.push(path);
+    }
+    while let Ok(Some(host)) = host_lines.next_line().await {
+        hosts.push(host);
     }
 
     // append some more payloads
@@ -401,7 +429,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     // spawn our workers 
     rt.spawn(async move {
-        send_url(job_tx, url_arg.to_string(), paths, wordlists, payloads, rate, match_status, deviation, stop_at_match).await
+        send_url(job_tx, url_arg.to_string(), hosts, paths, wordlists, payloads, rate, match_status, deviation, stop_at_match).await
     });
     let out_pb = pb.clone();
     rt.spawn(async move {
@@ -440,7 +468,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
 
 // this function will send the jobs to the workers
-async fn send_url(mut tx:spmc::Sender<Job>, url: String, paths:Vec<String>, wordlists:Vec<String>, payloads:Vec<String>, rate:u32, match_status:String, deviation:String, stop_at_match:bool) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+async fn send_url(mut tx:spmc::Sender<Job>, url:String, hosts:Vec<String>, paths:Vec<String>, wordlists:Vec<String>, payloads:Vec<String>, rate:u32, match_status:String, deviation:String, stop_at_match:bool) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     //set rate limit
     let lim = RateLimiter::direct(Quota::per_second(std::num::NonZeroU32::new(rate).unwrap()));
@@ -454,29 +482,50 @@ async fn send_url(mut tx:spmc::Sender<Job>, url: String, paths:Vec<String>, word
     };
 
     // only fuzz with wordlists, if the payloads are not defined
-    if payloads.is_empty() {
-        for path in paths.iter() {
-            for word in wordlists.iter() {
+    if paths.is_empty() {
+        for host in hosts.iter() {
+            for payload in payloads.iter() {
                 let msg = Job {
-                    path: Some(path.clone()),
+                    host: Some(host.clone()),
+                    path: Some("".to_string()),
                     settings: Some(job_settings.clone()),
                     url: Some(url.clone()),
-                    payload: Some("".to_string()),
-                    word: Some(word.clone()),
+                    payload: Some(payload.clone()),
+                    word: Some("".to_string()),
                 };
                 if let Err(_) = tx.send(msg) {
                     continue;
                 }
             }
         }
-    }
-
 
     // only fuzz with payloads, if the wordlists are not defined
-    if wordlists.is_empty() {
+    }else if wordlists.is_empty() {
+        for path in paths.iter() {
+            for host in hosts.iter() {
+                for payload in payloads.iter() {
+                    let msg = Job {
+                        host: Some(host.clone()),
+                        path: Some(path.clone()),
+                        settings: Some(job_settings.clone()),
+                        url: Some(url.clone()),
+                        payload: Some(payload.to_string()),
+                        word: Some("".to_string()),
+                    };
+                
+                    if let Err(_) = tx.send(msg) {
+                        continue;
+                    }
+                }
+            }
+        }
+
+    // only fuzz with payloads, if the hosts are not defined
+    }else if hosts.is_empty() {
         for path in paths.iter() {
             for payload in payloads.iter() {
                 let msg = Job {
+                    host: Some("".to_string()),
                     path: Some(path.clone()),
                     settings: Some(job_settings.clone()),
                     url: Some(url.clone()),
@@ -488,25 +537,54 @@ async fn send_url(mut tx:spmc::Sender<Job>, url: String, paths:Vec<String>, word
                 }
             }
         }
-    }
 
-
-    // fuzz using both payloads and wordlists, if they are both defined
-    for path in paths.iter() {
-        for payload in payloads.iter() {
-            for word in wordlists.iter() {
-                let msg = Job {
-                    path: Some(path.clone()),
-                    settings: Some(job_settings.clone()),
-                    url: Some(url.clone()),
-                    payload: Some(payload.clone()),
-                    word: Some(word.clone()),
-                };
-                if let Err(_) = tx.send(msg) {
-                    continue;
+    // only fuzz with hosts, paths and payloads, if the wordlist is not defined
+    }else if  !hosts.is_empty() && !paths.is_empty() {
+        for host in hosts.iter() {
+            for path in paths.iter() {
+                for payload in payloads.iter() {
+                    let msg = Job {
+                        host: Some(host.clone()),
+                        path: Some(path.clone()),
+                        settings: Some(job_settings.clone()),
+                        url: Some(url.clone()),
+                        payload: Some(payload.clone()),
+                        word: Some("".to_string()),
+                    };
+                    if let Err(_) = tx.send(msg) {
+                        continue;
+                    }
                 }
             }
         }
+    
+    
+    // fuzz using both payloads, hosts, paths and wordlists, if they are both defined
+    }else if  !hosts.is_empty() && !paths.is_empty() && !wordlists.is_empty() {
+        for host in hosts.iter() {
+            for path in paths.iter() {
+                for payload in payloads.iter() {
+                    for word in wordlists.iter() {
+                        let msg = Job {
+                            host: Some(host.clone()),
+                            path: Some(path.clone()),
+                            settings: Some(job_settings.clone()),
+                            url: Some(url.clone()),
+                            payload: Some(payload.clone()),
+                            word: Some(word.clone()),
+                        };
+                        if let Err(_) = tx.send(msg) {
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+
+    // require args are not specified
+    }else{
+        println!("{}{}{} {}", "[".bold().white(), "!".bold().red(), "]".bold().white(), "Please specify the correct wordlists".bold().white());
+        exit(1);
     }
     lim.until_ready().await;
     Ok(())
@@ -540,10 +618,12 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
         let job_word = job.word.unwrap();
         let job_payload = job.payload.unwrap();
         let job_path = job.path.unwrap();
+        let job_host = job.host.unwrap();
         let job_settings = job.settings.unwrap();
         let job_path_new = job_path.clone();
         let job_payload_new = job_payload.clone();
         let job_url_new = job_url.clone();
+        let job_host_new = job_host.clone();
 
         pb.inc(1);
 
@@ -562,10 +642,14 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
             if job_path_new.is_empty() == false {
                 _new_url = _new_url.replace("{paths}", &job_path_new);
             }
+            if job_host_new.is_empty() == false {
+                _new_url = _new_url.replace("{hosts}", &job_host);
+            }
 
             let mut url = String::from("");                                        
             url.push_str(&_new_url);
             let print_url = url.clone();
+
             
             let get = client.get(url);
             let req = match get.build() {

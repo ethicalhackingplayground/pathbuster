@@ -30,7 +30,7 @@
 
 ### Todos
 
-- [ ] Implement multiple host scanning using the replacement `{hosts}`.
+- [x] Implement multiple host scanning using the replacement `{hosts}`.
 - [ ] Implement **--drop-after-fail** which will ignore requests with the same response code multiple times in a row.
 ---
 
@@ -55,12 +55,11 @@ cargo add pathbuster
 pathbuster -h
 ```
 
-<details>
-<summary> 👉 pathbuster help menu 👈</summary>
+This command will show the tool's help information and present a list of all the switches that are available.
 
 ```
 USAGE:
-    pathbuster [OPTIONS] --url <url> --payloads <payloads> --paths <paths> --deviation <deviation>
+    pathbuster.exe [OPTIONS] --url <url> --payloads <payloads> --paths <paths> --deviation <deviation>
 
 OPTIONS:
     -c, --concurrency <concurrency>
@@ -72,17 +71,21 @@ OPTIONS:
     -h, --help
             Print help information
 
+        --hosts <hosts>
+            the file containing the list of root domains [default: .hosts.tmp]
+
         --match-status <match-status>
             [default: 200]
 
     -o, --out <out>
             The output file
 
-    -p, --payloads <payloads>
-            the file containing the traversal payloads [default: ]
-
         --paths <paths>
-            The list of routes (crawl the host to collect routes) [default: .paths.tmp]
+            the file containing the list of routes (crawl the host to collect routes) [default:
+            .paths.tmp]
+
+        --payloads <payloads>
+            the file containing the traversal payloads [default: ]
 
     -r, --rate <rate>
             Maximum in-flight requests per second [default: 1000]
@@ -102,8 +105,6 @@ OPTIONS:
         --wordlist <wordlist>
             the file containing the technology paths [default: .wordlist.tmp]
 ```
-
-</details>
 
 ## Examples
 
