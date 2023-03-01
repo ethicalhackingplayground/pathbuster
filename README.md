@@ -12,7 +12,6 @@
   <a href="https://twitter.com/z0idsec"><img src="https://img.shields.io/twitter/follow/z0idsec.svg?logo=twitter"></a>
   <a href="https://discord.gg/MQWCem5b"><img src="https://img.shields.io/discord/862900124740616192.svg?logo=discord"></a>
   <br>
-  <b>All your proxies are belong to us</b>
 </p>
 
 ---
