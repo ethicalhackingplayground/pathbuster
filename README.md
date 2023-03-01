@@ -25,7 +25,7 @@ Blake Jacobs <blake@cyberlix.io
 path-normalization pentesting tool
 
 USAGE:
-    pathbuster.exe [OPTIONS] --url <url> --payloads <payloads> --deviation <deviation>
+    pathbuster [OPTIONS] --url <url> --payloads <payloads> --deviation <deviation>
 
 OPTIONS:
     -c, --concurrency <concurrency>
