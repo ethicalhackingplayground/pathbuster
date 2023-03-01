@@ -17,6 +17,7 @@
 ---
 
 <p align="center">
+  <a href="#todos">Todos</a> •
   <a href="#installation">Installation</a> •
   <a href="#usage">Usage</a> •
   <a href="#examples">Examples</a> •
@@ -24,6 +25,12 @@
   <a href="#license">License</a> •
   <a href="https://discord.gg/MQWCem5b">Join Discord</a> 
 </p>
+
+### Todos
+
+- [ ] Implement multiple host scanning using the replacement `{hosts}`.
+- [ ] Implement **--drop-after-fail** which will ignore requests with the same response code multiple times in a row.
+---
 
 ## Installation
 
