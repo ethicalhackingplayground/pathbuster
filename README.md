@@ -45,7 +45,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 Install pathbuster
 
 ```bash
-cargo add pathbuster
+cargo install pathbuster
 ```
 
 
