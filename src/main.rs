@@ -65,7 +65,7 @@ fn print_banner() {
   / /_/ / /_/ / /_/ / / / /_/ / /_/ (__  ) /_/  __/ /    
  / .___/\__,_/\__/_/ /_/_.___/\__,_/____/\__/\___/_/     
 /_/                                                          
-                                v0.1.6                                   
+                                v0.1.7                                 
     "#;
     println!("{}", BANNER.white().bold());
     println!(
@@ -520,24 +520,6 @@ async fn send_url(mut tx:spmc::Sender<Job>, url:String, hosts:Vec<String>, paths
             }
         }
 
-    // only fuzz with payloads, if the hosts are not defined
-    }else if hosts.is_empty() {
-        for path in paths.iter() {
-            for payload in payloads.iter() {
-                let msg = Job {
-                    host: Some("".to_string()),
-                    path: Some(path.clone()),
-                    settings: Some(job_settings.clone()),
-                    url: Some(url.clone()),
-                    payload: Some(payload.to_string()),
-                    word: Some("".to_string()),
-                };
-                if let Err(_) = tx.send(msg) {
-                    continue;
-                }
-            }
-        }
-
     // only fuzz with hosts, paths and payloads, if the wordlist is not defined
     }else if  !hosts.is_empty() && !paths.is_empty() {
         for host in hosts.iter() {
@@ -557,8 +539,27 @@ async fn send_url(mut tx:spmc::Sender<Job>, url:String, hosts:Vec<String>, paths
                 }
             }
         }
+    // fuzz using both payloads, paths and wordlists, if they are both defined
+    } else if  !wordlists.is_empty() && !paths.is_empty() {
+        for path in paths.iter() {
+            for payload in payloads.iter() {
+                for word in wordlists.iter() {
+                    let msg = Job {
+                        host: Some("".to_string()),
+                        path: Some(path.clone()),
+                        settings: Some(job_settings.clone()),
+                        url: Some(url.clone()),
+                        payload: Some(payload.clone()),
+                        word: Some(word.clone()),
+                    };
+                    if let Err(_) = tx.send(msg) {
+                        continue;
+                    }
+                }
+            }
+        }
     
-    
+
     // fuzz using both payloads, hosts, paths and wordlists, if they are both defined
     }else if  !hosts.is_empty() && !paths.is_empty() && !wordlists.is_empty() {
         for host in hosts.iter() {
