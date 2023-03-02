@@ -106,6 +106,25 @@ OPTIONS:
             the file containing the technology paths [default: .wordlist.tmp]
 ```
 
+## Flags
+
+| Flag             | Description                                                                |
+| ----------------- | ------------------------------------------------------------------ |
+| --url |  url you would like to test
+| --paths | file containing the route place holder is **{paths}** |
+| --payloads | file containing the payloads place holder is **{payloads}** |
+| --hosts |  file containing the root domains place holder is **{hosts}** |
+| --wordlist |  file containing the technology wordlist **{words}** |
+| --match-status |  status code used to match internal responses |
+| --deviation |  used to compare responses for deviations compares ../internalpath to /internalpath  |
+| --stop-at-first-match | used to display first valid finding |
+| --rate | used set the maximum in-flight requests per second |
+| --workers | number of workers to process the jobs |
+| --concurrency | number of threads to be used for processing |
+| --out | save output to a file |
+| --help | prints help information |
+| --version | prints version information |
+
 ## Examples
 
 Fingerprinting the proxy
@@ -135,6 +154,11 @@ Pull requests are welcome. For major changes, please open an issue first
 to discuss what you would like to change.
 
 Please make sure to update tests as appropriate.
+
+
+## Support
+
+For support, email blake@cyberlix.io or join our Discord group.
 
 ## License
 
