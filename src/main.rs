@@ -29,7 +29,6 @@ use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use urlencoding::encode;
 
 
-
 // the Job struct which will be used to define our settings for the job
 #[derive(Clone, Debug)]
 struct JobSettings {
@@ -107,7 +106,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     // parse the cli arguments
     let matches = App::new("pathbuster")
-        .version("0.1.3")
+        .version("0.1.9")
         .author("Blake Jacobs <blake@cyberlix.io")
         .about("path-normalization pentesting tool")
         .arg(
@@ -146,7 +145,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             .long("payloads")
             .required(true)
             .takes_value(true)
-            .default_value("")
+            .default_value("./payloads/traversals.txt")
             .help("the file containing the traversal payloads")
         )
         .arg(
@@ -154,7 +153,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             .long("wordlist")
             .required(false)
             .takes_value(true)
-            .default_value(".wordlist.tmp")
+            .default_value("")
             .help("the file containing the technology paths")
         )
         .arg(
@@ -162,7 +161,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             .long("hosts")
             .required(false)
             .takes_value(true)
-            .default_value(".hosts.tmp")
+            .default_value("")
             .help("the file containing the list of root domains")
         )
         .arg(
@@ -170,7 +169,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             .long("paths")
             .required(true)
             .takes_value(true)
-            .default_value(".paths.tmp")
+            .default_value("")
             .help("the file containing the list of routes (crawl the host to collect routes)")
         )
         .arg(
@@ -232,22 +231,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             100
         }
     };
-    
-    let wordlist_path = match matches.value_of("wordlist") {
-        Some(wordlist_path) => wordlist_path,
-        None => {
-            pb.println("invalid wordlist file");
-            exit(1);
-        }
-    };
-
-    let payloads_path = match matches.value_of("payloads") {
-        Some(payloads_path) => payloads_path,
-        None => {
-            pb.println("invalid payloads file");
-            exit(1);
-        }
-    };
 
     let url_arg = match matches.get_one::<String>("url").map(|s| s.to_string()) {
          Some(url_arg) => url_arg,
@@ -277,18 +260,42 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         },
     };
 
+    let wordlist_path = match matches.value_of("wordlist") {
+        Some(wordlist_path) => wordlist_path,
+        None => {
+            pb.println("invalid wordlist file");
+            exit(1);
+        }
+    };
+    // copy some variables
+    let _wordlist_path = wordlist_path.clone();
+
+    let payloads_path = match matches.value_of("payloads") {
+        Some(payloads_path) => payloads_path,
+        None => {
+            pb.println("invalid payloads file");
+            exit(1);
+        }
+    };
+
     let paths_path = match matches.get_one::<String>("paths").map(|s| s.to_string()) {
         Some(paths_path) => paths_path,
         None => {
             "".to_string()
         }
     };
+    // copy some variables
+    let _paths_path = paths_path.clone();
+
     let hosts_path = match matches.get_one::<String>("hosts").map(|s| s.to_string()) {
         Some(hosts_path) => hosts_path,
         None => {
             "".to_string()
         }
     };
+    // copy some variables
+    let _hosts_path = hosts_path.clone();
+
     let match_status = match matches.get_one::<String>("match-status").map(|s| s.to_string()) {
         Some(match_status) => match_status,
         None => {
@@ -345,29 +352,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             exit(1);
         }
     };
-    let wordlists_handle = match File::open(wordlist_path).await {
-        Ok(wordlists_handle) => wordlists_handle,
-        Err(e) => {
-            pb.println(format!("failed to open input file: {:?}", e));
-            exit(1);
-        }
-    };
-    let hosts_handle = match File::open(hosts_path).await {
-        Ok(hosts_handle) => hosts_handle,
-        Err(e) => {
-            pb.println(format!("failed to open input file: {:?}", e));
-            exit(1);
-        }
-    };
-    // define the file handle for the wordlists.
-    let paths_handle = match File::open(paths_path).await {
-        Ok(paths_handle) => paths_handle,
-        Err(e) => {
-            pb.println(format!("failed to open input file: {:?}", e));
-            exit(1);
-        }
-    };
-
 
 
     // build our wordlists by constructing the arrays and storing 
@@ -375,36 +359,72 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     let (job_tx, job_rx) = spmc::channel::<Job>();
     let (result_tx, result_rx) = mpsc::channel::<JobResult>(w);
 
-    let payload_buf = BufReader::new(payloads_handle);
-    let mut payload_lines = payload_buf.lines();
-    let mut payloads = vec![];
-
-    let wordlist_buf = BufReader::new(wordlists_handle);
-    let mut wordlist_lines = wordlist_buf.lines();
+    let mut hosts = vec![];
     let mut wordlists = vec![];
-
-    let paths_buf = BufReader::new(paths_handle);
-    let mut path_lines = paths_buf.lines();
+    let mut payloads = vec![];
     let mut paths = vec![];
 
-    
-    let hosts_buf = BufReader::new(hosts_handle);
-    let mut host_lines = hosts_buf.lines();
-    let mut hosts = vec![];
+    let payload_buf = BufReader::new(payloads_handle);
+    let mut payload_lines = payload_buf.lines();
 
-    while let Ok(Some(words)) = wordlist_lines.next_line().await {
-        wordlists.push(words);
-    }
+
+    // read the payloads file and append each line to an array.
     while let Ok(Some(payload)) = payload_lines.next_line().await {
         let _payload = encode(&payload.to_string()).to_string();
         payloads.push(_payload);
         payloads.push(payload);
     }
-    while let Ok(Some(path)) = path_lines.next_line().await {
-        paths.push(path);
+
+
+    // read the wordlist file if specified and append each line to an array.
+    if !_wordlist_path.is_empty() {
+        let wordlists_handle = match File::open(wordlist_path).await {
+            Ok(wordlists_handle) => wordlists_handle,
+            Err(e) => {
+                pb.println(format!("failed to open input file: {:?}", e));
+                exit(1);
+            }
+        };
+        let wordlist_buf = BufReader::new(wordlists_handle);
+        let mut wordlist_lines = wordlist_buf.lines();
+        while let Ok(Some(words)) = wordlist_lines.next_line().await {
+            wordlists.push(words);
+        }
     }
-    while let Ok(Some(host)) = host_lines.next_line().await {
-        hosts.push(host);
+
+
+    // read the paths file if specified and append each line to an array.
+    if !_paths_path.is_empty() {
+         // define the file handle for the wordlists.
+         let paths_handle = match File::open(paths_path).await {
+            Ok(paths_handle) => paths_handle,
+            Err(e) => {
+                pb.println(format!("failed to open input file: {:?}", e));
+                exit(1);
+            }
+        };
+        let paths_buf = BufReader::new(paths_handle);
+        let mut path_lines = paths_buf.lines();
+        while let Ok(Some(path)) = path_lines.next_line().await {
+            paths.push(path);
+        }
+    }
+
+
+    // read the hosts file if specified and append each line to an array.
+    if !_hosts_path.is_empty() {
+        let hosts_handle = match File::open(hosts_path).await {
+            Ok(hosts_handle) => hosts_handle,
+            Err(e) => {
+                pb.println(format!("failed to open input file: {:?}", e));
+                exit(1);
+            }
+        };
+        let hosts_buf = BufReader::new(hosts_handle);
+        let mut host_lines = hosts_buf.lines();
+        while let Ok(Some(host)) = host_lines.next_line().await {
+            hosts.push(host);
+        }
     }
 
     // append some more payloads
