@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::io::Write;
 use std::process::exit;
 use std::time::Duration;
 
@@ -7,8 +8,8 @@ use levenshtein::levenshtein;
 use clap::App;
 use clap::Arg;
 
-use futures::StreamExt;
 use futures::stream::FuturesUnordered;
+use futures::StreamExt;
 use governor::Quota;
 use governor::RateLimiter;
 
@@ -18,9 +19,9 @@ use tokio::fs::OpenOptions;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc;
 
-use tokio::time::Instant;
-use tokio::runtime::Builder;
 use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::runtime::Builder;
+use tokio::time::Instant;
 use tokio::{fs::File, task};
 
 use colored::Colorize;
@@ -28,15 +29,15 @@ use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 
 use urlencoding::encode;
 
-
 // the Job struct which will be used to define our settings for the job
 #[derive(Clone, Debug)]
 struct JobSettings {
-    stop_at_match: bool,
     deviation: String,
     match_status: String,
+    filter_body_size: String,
+    filter_status: String,
+    drop_after_fail: String,
 }
-
 
 // the Job struct which will be used to send to the workers
 #[derive(Clone, Debug)]
@@ -55,7 +56,6 @@ pub struct JobResult {
     data: String,
 }
 
-
 fn print_banner() {
     const BANNER: &str = r#"                             
                  __  __    __               __           
@@ -64,9 +64,9 @@ fn print_banner() {
   / /_/ / /_/ / /_/ / / / /_/ / /_/ (__  ) /_/  __/ /    
  / .___/\__,_/\__/_/ /_/_.___/\__,_/____/\__/\___/_/     
 /_/                                                          
-                                v0.1.9                               
+                                v0.2.0                              
     "#;
-    println!("{}", BANNER.white().bold());
+    write!(&mut rainbowcoat::stdout(), "{}", BANNER).unwrap();
     println!(
         "{}{}{} {}",
         "[".bold().white(),
@@ -90,95 +90,106 @@ fn print_banner() {
         "[".bold().white(),
         "WRN".bold().yellow(),
         "]".bold().white(),
-        "By using cyberlix, you also agree to the terms of the APIs used."
+        "By using pathbuster, you also agree to the terms of the APIs used."
             .bold()
             .white()
     );
 }
 
-
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
-    
     // print the banner
     print_banner();
 
     // parse the cli arguments
     let matches = App::new("pathbuster")
-        .version("0.1.9")
+        .version("0.2.0")
         .author("Blake Jacobs <blake@cyberlix.io")
         .about("path-normalization pentesting tool")
         .arg(
             Arg::with_name("url")
-            .short('u')
-            .long("url")
-            .takes_value(true)
-            .required(true)
-            .help("the url you would like to test")
+                .short('u')
+                .long("url")
+                .takes_value(true)
+                .required(true)
+                .help("the url you would like to test"),
         )
         .arg(
             Arg::with_name("rate")
-            .short('r')
-            .long("rate")
-            .takes_value(true)
-            .default_value("1000")
-            .help("Maximum in-flight requests per second")
+                .short('r')
+                .long("rate")
+                .takes_value(true)
+                .default_value("1000")
+                .help("Maximum in-flight requests per second"),
         )
         .arg(
-            Arg::with_name("stop-at-first-match")
-            .long("stop-at-first-match")
-            .takes_value(true)
-            .default_value("false")
-            .required(false)
-            .help("stops execution flow on the first match")
+            Arg::with_name("drop-after-fail")
+                .long("drop-after-fail")
+                .takes_value(true)
+                .default_value("302,301")
+                .required(false)
+                .help("ignore requests with the same response code multiple times in a row"),
         )
         .arg(
             Arg::with_name("match-status")
-            .long("match-status")
-            .takes_value(true)
-            .required(false)
-            .default_value("200")
+                .long("match-status")
+                .takes_value(true)
+                .required(false)
+                .default_value("200"),
+        )
+        .arg(
+            Arg::with_name("filter-body-size")
+                .long("filter-body-size")
+                .takes_value(true)
+                .required(false)
+                .default_value("0"),
+        )
+        .arg(
+            Arg::with_name("filter-status")
+                .long("filter-status")
+                .takes_value(true)
+                .default_value("302,301")
+                .required(false),
         )
         .arg(
             Arg::with_name("payloads")
-            .long("payloads")
-            .required(true)
-            .takes_value(true)
-            .default_value("./payloads/traversals.txt")
-            .help("the file containing the traversal payloads")
+                .long("payloads")
+                .required(true)
+                .takes_value(true)
+                .default_value("./payloads/traversals.txt")
+                .help("the file containing the traversal payloads"),
         )
         .arg(
             Arg::with_name("wordlist")
-            .long("wordlist")
-            .required(false)
-            .takes_value(true)
-            .default_value("")
-            .help("the file containing the technology paths")
+                .long("wordlist")
+                .required(false)
+                .takes_value(true)
+                .default_value("")
+                .help("the file containing the technology paths"),
         )
         .arg(
             Arg::with_name("hosts")
-            .long("hosts")
-            .required(false)
-            .takes_value(true)
-            .default_value("")
-            .help("the file containing the list of root domains")
+                .long("hosts")
+                .required(false)
+                .takes_value(true)
+                .default_value("")
+                .help("the file containing the list of root domains"),
         )
         .arg(
             Arg::with_name("paths")
-            .long("paths")
-            .required(true)
-            .takes_value(true)
-            .default_value("")
-            .help("the file containing the list of routes (crawl the host to collect routes)")
+                .long("paths")
+                .required(false)
+                .takes_value(true)
+                .default_value("")
+                .help("the file containing the list of routes (crawl the host to collect routes)"),
         )
         .arg(
             Arg::with_name("deviation")
-            .long("deviation")
-            .required(true)
-            .takes_value(true)
-            .default_value("3")
-            .help("The distance between the responses")
+                .long("deviation")
+                .required(true)
+                .takes_value(true)
+                .default_value("3")
+                .help("The distance between the responses"),
         )
         .arg(
             Arg::with_name("concurrency")
@@ -215,7 +226,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             .progress_chars(r#"#>-"#),
     );
 
-
     let rate = match matches.value_of("rate").unwrap().parse::<u32>() {
         Ok(n) => n,
         Err(_) => {
@@ -233,31 +243,27 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     };
 
     let url_arg = match matches.get_one::<String>("url").map(|s| s.to_string()) {
-         Some(url_arg) => url_arg,
-         None => {
-            "".to_string()
-         },
+        Some(url_arg) => url_arg,
+        None => "".to_string(),
     };
 
-    let stop_at_match = match matches.get_one::<String>("stop-at-first-match").map(|s| s.to_string()) {
-        Some(stop_at_match) => match stop_at_match.parse::<bool>() {
-            Ok(stop_at_match) => stop_at_match,
-            Err(_) => {
-                pb.println("invalid format");
-                false
-            },
-        },
-        None => {
-            pb.println("invalid format");
-            false
-        },
-    };
-
-    let deviation = match matches.get_one::<String>("deviation").map(|s| s.to_string()) {
+    let deviation = match matches
+        .get_one::<String>("deviation")
+        .map(|s| s.to_string())
+    {
         Some(deviation) => deviation,
+        None => "".to_string(),
+    };
+
+    let drop_after_fail = match matches
+        .get_one::<String>("drop-after-fail")
+        .map(|s| s.to_string())
+    {
+        Some(drop_after_fail) => drop_after_fail,
         None => {
-           "".to_string()
-        },
+            pb.println("could not parse drop-after-fail, using default of 302,301");
+            "".to_string()
+        }
     };
 
     let wordlist_path = match matches.value_of("wordlist") {
@@ -280,27 +286,38 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     let paths_path = match matches.get_one::<String>("paths").map(|s| s.to_string()) {
         Some(paths_path) => paths_path,
-        None => {
-            "".to_string()
-        }
+        None => "".to_string(),
     };
     // copy some variables
     let _paths_path = paths_path.clone();
 
     let hosts_path = match matches.get_one::<String>("hosts").map(|s| s.to_string()) {
         Some(hosts_path) => hosts_path,
-        None => {
-            "".to_string()
-        }
+        None => "".to_string(),
     };
     // copy some variables
     let _hosts_path = hosts_path.clone();
 
-    let match_status = match matches.get_one::<String>("match-status").map(|s| s.to_string()) {
+    let match_status = match matches
+        .get_one::<String>("match-status")
+        .map(|s| s.to_string())
+    {
         Some(match_status) => match_status,
-        None => {
-            "".to_string()
-        }
+        None => "".to_string(),
+    };
+    let filter_body_size = match matches
+        .get_one::<String>("filter-body-size")
+        .map(|s| s.to_string())
+    {
+        Some(filter_body_size) => filter_body_size,
+        None => "".to_string(),
+    };
+    let filter_status = match matches
+        .get_one::<String>("filter-status")
+        .map(|s| s.to_string())
+    {
+        Some(filter_status) => filter_status,
+        None => "".to_string(),
     };
     let outfile_path = match matches.value_of("out") {
         Some(outfile_path) => outfile_path,
@@ -310,7 +327,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         }
     };
 
-    
     let outfile_handle = match OpenOptions::new()
         .create(true)
         .write(true)
@@ -325,7 +341,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         }
     };
 
-    
     let w: usize = match matches.value_of("workers").unwrap().parse::<usize>() {
         Ok(w) => w,
         Err(_) => {
@@ -336,13 +351,12 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     // Set up a worker pool with 4 threads
     let rt = Builder::new_multi_thread()
-    .enable_all()
-    .worker_threads(w)
-    .build()
-    .unwrap();
+        .enable_all()
+        .worker_threads(w)
+        .build()
+        .unwrap();
 
     let now = Instant::now();
-
 
     // define the file handle for the wordlists.
     let payloads_handle = match File::open(payloads_path).await {
@@ -353,8 +367,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         }
     };
 
-
-    // build our wordlists by constructing the arrays and storing 
+    // build our wordlists by constructing the arrays and storing
     // the words in the array.
     let (job_tx, job_rx) = spmc::channel::<Job>();
     let (result_tx, result_rx) = mpsc::channel::<JobResult>(w);
@@ -367,6 +380,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     let payload_buf = BufReader::new(payloads_handle);
     let mut payload_lines = payload_buf.lines();
 
+    // set the message
+    println!(
+        "{}{}{} {}",
+        "[".bold().white(),
+        "+".bold().green(),
+        "]".bold().white(),
+        "Generating Payloads".bold().white()
+    );
 
     // read the payloads file and append each line to an array.
     while let Ok(Some(payload)) = payload_lines.next_line().await {
@@ -374,7 +395,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         payloads.push(_payload);
         payloads.push(payload);
     }
-
 
     // read the wordlist file if specified and append each line to an array.
     if !_wordlist_path.is_empty() {
@@ -392,11 +412,10 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         }
     }
 
-
     // read the paths file if specified and append each line to an array.
     if !_paths_path.is_empty() {
-         // define the file handle for the wordlists.
-         let paths_handle = match File::open(paths_path).await {
+        // define the file handle for the wordlists.
+        let paths_handle = match File::open(paths_path).await {
             Ok(paths_handle) => paths_handle,
             Err(e) => {
                 pb.println(format!("failed to open input file: {:?}", e));
@@ -409,7 +428,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             paths.push(path);
         }
     }
-
 
     // read the hosts file if specified and append each line to an array.
     if !_hosts_path.is_empty() {
@@ -428,9 +446,61 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     }
 
     // append some more payloads
-    for i in 0u8..=255 {
-        let _char = i as char;
-        let _payload = encode(&_char.to_string()).to_string();
+    for i in 0..=47 {
+        let i = char::from_u32(i).unwrap();
+        let _payload = encode(&i.to_string()).to_string();
+        // single url encoding bypass
+        if _payload.contains("%") {
+            payloads.push(_payload.to_string());
+        }
+        // double url encoding bypass
+        let _payload = encode(&_payload.to_string()).to_string();
+        if _payload.contains("%") {
+            payloads.push(_payload.to_string());
+        }
+    }
+    for i in 58..=63 {
+        let i = char::from_u32(i).unwrap();
+        let _payload = encode(&i.to_string()).to_string();
+        // single url encoding bypass
+        if _payload.contains("%") {
+            payloads.push(_payload.to_string());
+        }
+        // double url encoding bypass
+        let _payload = encode(&_payload.to_string()).to_string();
+        if _payload.contains("%") {
+            payloads.push(_payload.to_string());
+        }
+    }
+    for i in 91..=96 {
+        let i = char::from_u32(i).unwrap();
+        let _payload = encode(&i.to_string()).to_string();
+        // single url encoding bypass
+        if _payload.contains("%") {
+            payloads.push(_payload.to_string());
+        }
+        // double url encoding bypass
+        let _payload = encode(&_payload.to_string()).to_string();
+        if _payload.contains("%") {
+            payloads.push(_payload.to_string());
+        }
+    }
+    for i in 160..=844 {
+        let i = char::from_u32(i).unwrap();
+        let _payload = encode(&i.to_string()).to_string();
+        // single url encoding bypass
+        if _payload.contains("%") {
+            payloads.push(_payload.to_string());
+        }
+        // double url encoding bypass
+        let _payload = encode(&_payload.to_string()).to_string();
+        if _payload.contains("%") {
+            payloads.push(_payload.to_string());
+        }
+    }
+    for i in 8194..=8332 {
+        let i = char::from_u32(i).unwrap();
+        let _payload = encode(&i.to_string()).to_string();
         // single url encoding bypass
         if _payload.contains("%") {
             payloads.push(_payload.to_string());
@@ -442,14 +512,35 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         }
     }
 
-
     // print the number of generated payloads.
-    println!("{}{}{} Generated {} payloads", "[".bold().white(), "+".bold().green(), "]".bold().white(), payloads.len().to_string().bold().white());
+    // set the message
+    println!(
+        "{}{}{} {} {} {}\n",
+        "[".bold().white(),
+        "+".bold().green(),
+        "]".bold().white(),
+        "Generated".bold().white(),
+        payloads.len().to_string().bold().white(),
+        "payloads".bold().white()
+    );
 
-
-    // spawn our workers 
+    // spawn our workers
     rt.spawn(async move {
-        send_url(job_tx, url_arg.to_string(), hosts, paths, wordlists, payloads, rate, match_status, deviation, stop_at_match).await
+        send_url(
+            job_tx,
+            url_arg.to_string(),
+            hosts,
+            paths,
+            wordlists,
+            payloads,
+            rate,
+            match_status,
+            deviation,
+            filter_body_size,
+            filter_status,
+            drop_after_fail,
+        )
+        .await
     });
     let out_pb = pb.clone();
     rt.spawn(async move {
@@ -457,91 +548,59 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         output(out_pb, outfile_handle, result_rx).await;
     });
 
-
-    
     // process the jobs.
     let workers = FuturesUnordered::new();
     for _ in 0..concurrency {
         let rx = job_rx.clone();
         let tx: mpsc::Sender<JobResult> = result_tx.clone();
         let pb = pb.clone();
-        workers.push(task::spawn(
-            async move { run_tester(pb, rx, tx).await },
-        ));
+        workers.push(task::spawn(async move { run_tester(pb, rx, tx).await }));
     }
-
 
     // print the results
     let _results: Vec<_> = workers.collect().await;
     let elapsed_time = now.elapsed();
     rt.shutdown_background();
     println!(
-        "\n\n{}, {} {}s",
+        "\n{}, {} {}{}",
         "Completed!".bold().green(),
         "scan took".bold().white(),
-        elapsed_time.as_secs().to_string().bold().white()
+        elapsed_time.as_secs().to_string().bold().white(),
+        "s".bold().white()
     );
 
     Ok(())
-} 
-
-
+}
 
 // this function will send the jobs to the workers
-async fn send_url(mut tx:spmc::Sender<Job>, url:String, hosts:Vec<String>, paths:Vec<String>, wordlists:Vec<String>, payloads:Vec<String>, rate:u32, match_status:String, deviation:String, stop_at_match:bool) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
-
+async fn send_url(
+    mut tx: spmc::Sender<Job>,
+    url: String,
+    hosts: Vec<String>,
+    paths: Vec<String>,
+    wordlists: Vec<String>,
+    payloads: Vec<String>,
+    rate: u32,
+    match_status: String,
+    deviation: String,
+    filter_body_size: String,
+    filter_status: String,
+    drop_after_fail: String,
+) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     //set rate limit
     let lim = RateLimiter::direct(Quota::per_second(std::num::NonZeroU32::new(rate).unwrap()));
 
-
     // the job settings
     let job_settings = JobSettings {
-        stop_at_match: stop_at_match,
+        filter_status: filter_status,
+        filter_body_size: filter_body_size,
         deviation: deviation.to_string(),
         match_status: match_status.to_string(),
+        drop_after_fail: drop_after_fail,
     };
 
-    // only fuzz with wordlists, if the payloads are not defined
-    if paths.is_empty() {
-        for host in hosts.iter() {
-            for payload in payloads.iter() {
-                let msg = Job {
-                    host: Some(host.clone()),
-                    path: Some("".to_string()),
-                    settings: Some(job_settings.clone()),
-                    url: Some(url.clone()),
-                    payload: Some(payload.clone()),
-                    word: Some("".to_string()),
-                };
-                if let Err(_) = tx.send(msg) {
-                    continue;
-                }
-            }
-        }
-
-    // only fuzz with payloads, if the wordlists are not defined
-    }else if wordlists.is_empty() {
-        for path in paths.iter() {
-            for host in hosts.iter() {
-                for payload in payloads.iter() {
-                    let msg = Job {
-                        host: Some(host.clone()),
-                        path: Some(path.clone()),
-                        settings: Some(job_settings.clone()),
-                        url: Some(url.clone()),
-                        payload: Some(payload.to_string()),
-                        word: Some("".to_string()),
-                    };
-                
-                    if let Err(_) = tx.send(msg) {
-                        continue;
-                    }
-                }
-            }
-        }
-
     // only fuzz with hosts, paths and payloads, if the wordlist is not defined
-    }else if  !hosts.is_empty() && !paths.is_empty() {
+    if !hosts.is_empty() && !paths.is_empty() {
         for host in hosts.iter() {
             for path in paths.iter() {
                 for payload in payloads.iter() {
@@ -559,8 +618,27 @@ async fn send_url(mut tx:spmc::Sender<Job>, url:String, hosts:Vec<String>, paths
                 }
             }
         }
+
+    // fuzz using payloads in paths
+    } else if !paths.is_empty() {
+        for path in paths.iter() {
+            for payload in payloads.iter() {
+                let msg = Job {
+                    host: Some("".to_string()),
+                    path: Some(path.clone()),
+                    settings: Some(job_settings.clone()),
+                    url: Some(url.clone()),
+                    payload: Some(payload.clone()),
+                    word: Some("".to_string()),
+                };
+                if let Err(_) = tx.send(msg) {
+                    continue;
+                }
+            }
+        }
+
     // fuzz using both payloads, paths and wordlists, if they are both defined
-    } else if  !wordlists.is_empty() && !paths.is_empty() {
+    } else if !wordlists.is_empty() && !paths.is_empty() {
         for path in paths.iter() {
             for payload in payloads.iter() {
                 for word in wordlists.iter() {
@@ -578,10 +656,9 @@ async fn send_url(mut tx:spmc::Sender<Job>, url:String, hosts:Vec<String>, paths
                 }
             }
         }
-    
 
     // fuzz using both payloads, hosts, paths and wordlists, if they are both defined
-    }else if  !hosts.is_empty() && !paths.is_empty() && !wordlists.is_empty() {
+    } else if !hosts.is_empty() && !paths.is_empty() && !wordlists.is_empty() {
         for host in hosts.iter() {
             for path in paths.iter() {
                 for payload in payloads.iter() {
@@ -603,19 +680,29 @@ async fn send_url(mut tx:spmc::Sender<Job>, url:String, hosts:Vec<String>, paths
         }
 
     // require args are not specified
-    }else{
-        println!("{}{}{} {}", "[".bold().white(), "!".bold().red(), "]".bold().white(), "Please specify the correct wordlists".bold().white());
-        exit(1);
+    } else {
+        for payload in payloads.iter() {
+            for word in wordlists.iter() {
+                let msg = Job {
+                    host: Some("".to_string()),
+                    path: Some("".to_string()),
+                    settings: Some(job_settings.clone()),
+                    url: Some(url.clone()),
+                    payload: Some(payload.clone()),
+                    word: Some(word.clone()),
+                };
+                if let Err(_) = tx.send(msg) {
+                    continue;
+                }
+            }
+        }
     }
     lim.until_ready().await;
     Ok(())
 }
 
-
-
 // this function will test for path normalization vulnerabilities
-async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<JobResult>)  {
-
+async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<JobResult>) {
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert(
         reqwest::header::USER_AGENT,
@@ -651,8 +738,8 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
         let mut _path = String::from(job_path);
         let mut _payload = String::from(job_payload);
         let path_cnt = job_path_new.split("/").count() + 5;
+        let mut track_status_codes = 0;
         for _ in 0..path_cnt {
-
             let mut _new_url = String::from(&job_url_new);
             if job_payload_new.is_empty() == false {
                 _new_url = _new_url.replace("{payloads}", &_payload);
@@ -667,39 +754,67 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
                 _new_url = _new_url.replace("{hosts}", &job_host);
             }
 
-            let mut url = String::from("");                                        
+            let mut url = String::from("");
             url.push_str(&_new_url);
             let print_url = url.clone();
 
-            
             let get = client.get(url);
             let req = match get.build() {
                 Ok(req) => req,
                 Err(_) => continue,
             };
 
-
             let resp = match client.execute(req).await {
                 Ok(resp) => resp,
                 Err(_) => continue,
             };
 
-
             let content_length = match resp.content_length() {
                 Some(content_length) => content_length.to_string(),
-                None => {
-                    ""
-                }.to_owned(),
+                None => { "" }.to_owned(),
             };
             let out_url = print_url.clone();
-            if resp.status().to_string().contains(&job_settings.match_status) && content_length.is_empty() == false {
+            if resp
+                .status()
+                .to_string()
+                .contains(&job_settings.match_status)
+                && content_length.is_empty() == false
+            {
+                if job_settings.filter_body_size.contains(&content_length) {
+                    return;
+                }
+
+                if resp
+                    .status()
+                    .to_string()
+                    .contains(&job_settings.filter_status)
+                {
+                    return;
+                }
+                // track the status codes
+                if job_settings.drop_after_fail == resp.status().as_str() {
+                    track_status_codes += 1;
+                    if track_status_codes >= 5 {
+                        // set the message
+                        println!(
+                            "{}{}{} {} {} {}",
+                            "[".bold().white(),
+                            "+".bold().red(),
+                            "]".bold().white(),
+                            "skipping".bold().white(),
+                            print_url.bold().white(),
+                            "recurring status codes ".bold().white()
+                        );
+                        return;
+                    }
+                }
 
                 let parsed_url = match reqwest::Url::parse(&print_url) {
                     Ok(parsed_url) => parsed_url,
                     Err(e) => {
                         pb.println(format!("There is an error parsing the URL: {:?}", e));
                         continue;
-                    },
+                    }
                 };
 
                 let mut new_url = String::from("");
@@ -714,8 +829,7 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
                     Ok(req) => req,
                     Err(_) => continue,
                 };
-        
-        
+
                 let web_root_resp = match client.execute(req).await {
                     Ok(web_root_resp) => web_root_resp,
                     Err(_) => continue,
@@ -734,59 +848,82 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
 
                 if response_deviation >= deviation {
                     if resp.status().is_client_error() {
-                        pb.println(format!("{}{}{} {}{}{} {}{}{}",  "[".bold().white(), resp.status().as_str().bold().blue(), "]".bold().white(), 
-                                                                        "[".bold().white(), content_length.dimmed().white(), "]".bold().white(), 
-                                                                        "[".bold().white(), print_url.bold().cyan(), "]".bold().white()));
-
-                        if job_settings.stop_at_match == true {
-                            break;
-                        }
+                        pb.println(format!(
+                            "{}{}{} {}{}{} {}{}{}",
+                            "[".bold().white(),
+                            resp.status().as_str().bold().blue(),
+                            "]".bold().white(),
+                            "[".bold().white(),
+                            content_length.dimmed().white(),
+                            "]".bold().white(),
+                            "[".bold().white(),
+                            print_url.bold().cyan(),
+                            "]".bold().white()
+                        ));
                     }
-            
+
                     if resp.status().is_success() {
-                        pb.println(format!("{}{}{} {}{}{} {}{}{}",  "[".bold().white(), resp.status().as_str().bold().green(), "]".bold().white(), 
-                                                                        "[".bold().white(), content_length.dimmed().white(), "]".bold().white(), 
-                                                                        "[".bold().white(), print_url.bold().cyan(), "]".bold().white()));
-                        if job_settings.stop_at_match == true {
-                            break;
-                        }
+                        pb.println(format!(
+                            "{}{}{} {}{}{} {}{}{}",
+                            "[".bold().white(),
+                            resp.status().as_str().bold().green(),
+                            "]".bold().white(),
+                            "[".bold().white(),
+                            content_length.dimmed().white(),
+                            "]".bold().white(),
+                            "[".bold().white(),
+                            print_url.bold().cyan(),
+                            "]".bold().white()
+                        ));
                     }
-            
+
                     if resp.status().is_redirection() {
-                        pb.println(format!("{}{}{} {}{}{} {}{}{}",  "[".bold().white(), resp.status().as_str().bold().cyan(), "]".bold().white(), 
-                                                                        "[".bold().white(), content_length.dimmed().white(), "]".bold().white(), 
-                                                                        "[".bold().white(), print_url.bold().cyan(), "]".bold().white()));
-
-                        if job_settings.stop_at_match == true {
-                            break;
-                        }
+                        pb.println(format!(
+                            "{}{}{} {}{}{} {}{}{}",
+                            "[".bold().white(),
+                            resp.status().as_str().bold().cyan(),
+                            "]".bold().white(),
+                            "[".bold().white(),
+                            content_length.dimmed().white(),
+                            "]".bold().white(),
+                            "[".bold().white(),
+                            print_url.bold().cyan(),
+                            "]".bold().white()
+                        ));
                     }
-            
+
                     if resp.status().is_server_error() {
-                        pb.println(format!("{}{}{} {}{}{} {}{}{}",  "[".bold().white(), resp.status().as_str().bold().red(), "]".bold().white(), 
-                                                                        "[".bold().white(), content_length.dimmed().white(), "]".bold().white(), 
-                                                                        "[".bold().white(), print_url.bold().cyan(), "]".bold().white()));
-
-                        if job_settings.stop_at_match == true {
-                            break;
-                        }
+                        pb.println(format!(
+                            "{}{}{} {}{}{} {}{}{}",
+                            "[".bold().white(),
+                            resp.status().as_str().bold().red(),
+                            "]".bold().white(),
+                            "[".bold().white(),
+                            content_length.dimmed().white(),
+                            "]".bold().white(),
+                            "[".bold().white(),
+                            print_url.bold().cyan(),
+                            "]".bold().white()
+                        ));
                     }
-        
-                            
+
                     if resp.status().is_informational() {
-                        pb.println(format!("{}{}{} {}{}{} {}{}{}",  "[".bold().white(), resp.status().as_str().bold().purple(), "]".bold().white(), 
-                                                                        "[".bold().white(), content_length.dimmed().white(), "]".bold().white(), 
-                                                                        "[".bold().white(), print_url.bold().cyan(), "]".bold().white()));
-
-                        if job_settings.stop_at_match == true {
-                            break;
-                        }
+                        pb.println(format!(
+                            "{}{}{} {}{}{} {}{}{}",
+                            "[".bold().white(),
+                            resp.status().as_str().bold().purple(),
+                            "]".bold().white(),
+                            "[".bold().white(),
+                            content_length.dimmed().white(),
+                            "]".bold().white(),
+                            "[".bold().white(),
+                            print_url.bold().cyan(),
+                            "]".bold().white()
+                        ));
                     }
-        
+
                     // send the result message through the channel to the workers.
-                    let result_msg = JobResult {
-                        data: out_url,
-                    };
+                    let result_msg = JobResult { data: out_url };
                     if let Err(_) = tx.send(result_msg).await {
                         continue;
                     }
@@ -797,8 +934,6 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
         }
     }
 }
-
-
 
 // Saves the output to a file
 async fn output(_: ProgressBar, mut outfile: File, mut rx: mpsc::Receiver<JobResult>) {

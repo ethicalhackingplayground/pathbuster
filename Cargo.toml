@@ -2,7 +2,7 @@
 name = "pathbuster"
 authors = ["zoid", "<blake@cyberlix.io>"]
 description = "A path-normalization pentesting tool using path replacements."
-version = "0.1.9"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/ethicalhackingplayground/pathbuster"
@@ -22,3 +22,4 @@ clap =  { version = "^3.0.0-beta.2" }
 reqwest = { version = "0.11.14", features = ["native-tls", "blocking"] }
 levenshtein = "1.0.5"
 urlencoding = "2.1.2"
+rainbowcoat = "0.1.0"

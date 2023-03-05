@@ -31,7 +31,9 @@
 ### Todos
 
 - [x] Implement multiple host scanning using the replacement `{hosts}`.
-- [ ] Implement **--drop-after-fail** which will ignore requests with the same response code multiple times in a row.
+- [x] Implement **--filter-status** which will filter the status codes.
+- [x] Implement **--filter-body-size** which will filter the response sizes.
+- [x] Implement **--drop-after-fail** which will ignore requests with the same response code multiple times in a row.
 ---
 
 ## Installation
@@ -59,7 +61,7 @@ This command will show the tool's help information and present a list of all the
 
 ```
 USAGE:
-    pathbuster [OPTIONS] --url <url> --payloads <payloads> --paths <paths> --deviation <deviation>
+    pathbuster [OPTIONS] --url <url> --payloads <payloads> --deviation <deviation>
 
 OPTIONS:
     -c, --concurrency <concurrency>
@@ -68,11 +70,20 @@ OPTIONS:
         --deviation <deviation>
             The distance between the responses [default: 3]
 
+        --drop-after-fail <drop-after-fail>
+            ignore requests with the same response code multiple times in a row [default: 302,301]
+
+        --filter-body-size <filter-body-size>
+            [default: 0]
+
+        --filter-status <filter-status>
+            [default: 302,301]
+
     -h, --help
             Print help information
 
         --hosts <hosts>
-            the file containing the list of root domains [default: .hosts.tmp]
+            the file containing the list of root domains [default: ]
 
         --match-status <match-status>
             [default: 200]
@@ -81,17 +92,13 @@ OPTIONS:
             The output file
 
         --paths <paths>
-            the file containing the list of routes (crawl the host to collect routes) [default:
-            .paths.tmp]
+            the file containing the list of routes (crawl the host to collect routes) [default: ]
 
         --payloads <payloads>
-            the file containing the traversal payloads [default: ]
+            the file containing the traversal payloads [default: ./payloads/traversals.txt]
 
     -r, --rate <rate>
             Maximum in-flight requests per second [default: 1000]
-
-        --stop-at-first-match <stop-at-first-match>
-            stops execution flow on the first match [default: false]
 
     -u, --url <url>
             the url you would like to test
@@ -103,7 +110,7 @@ OPTIONS:
             The amount of workers [default: 1]
 
         --wordlist <wordlist>
-            the file containing the technology paths [default: .wordlist.tmp]
+            the file containing the technology paths [default: ]
 ```
 
 ## Flags
@@ -116,8 +123,10 @@ OPTIONS:
 | --hosts |  file containing the root domains place holder is **{hosts}** |
 | --wordlist |  file containing the technology wordlist **{words}** |
 | --match-status |  status code used to match internal responses |
+| --filter-body-size |  used to filter the response body like ffuf  |
+| --filter-status |  used to filter the response status code like ffuf  |
+| --drop-after-fail |  specify a status code to ignore if it reoccurs more than 5 times in a row  |
 | --deviation |  used to compare responses for deviations compares ../internalpath to /internalpath  |
-| --stop-at-first-match | used to display first valid finding |
 | --rate | used set the maximum in-flight requests per second |
 | --workers | number of workers to process the jobs |
 | --concurrency | number of threads to be used for processing |
