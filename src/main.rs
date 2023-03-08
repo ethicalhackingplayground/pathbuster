@@ -380,15 +380,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     let payload_buf = BufReader::new(payloads_handle);
     let mut payload_lines = payload_buf.lines();
 
-    // set the message
-    println!(
-        "{}{}{} {}",
-        "[".bold().white(),
-        "+".bold().green(),
-        "]".bold().white(),
-        "Generating Payloads".bold().white()
-    );
-
     // read the payloads file and append each line to an array.
     while let Ok(Some(payload)) = payload_lines.next_line().await {
         let _payload = encode(&payload.to_string()).to_string();
@@ -444,6 +435,17 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             hosts.push(host);
         }
     }
+
+    // set the message
+    println!(
+        "{}{}{} {} {} {}",
+        "[".bold().white(),
+        "+".bold().green(),
+        "]".bold().white(),
+        "Tech Wordlist".bold().white(),
+        wordlists.len().to_string().bold().cyan(),
+        "lines".bold().white()
+    );
 
     // append some more payloads
     for i in 0..=47 {
@@ -637,6 +639,24 @@ async fn send_url(
             }
         }
 
+    // fuzz using wordlists and payloads
+    } else if !wordlists.is_empty() {
+        for word in wordlists.iter() {
+            for payload in payloads.iter() {
+                let msg = Job {
+                    host: Some("".to_string()),
+                    path: Some("".to_string()),
+                    settings: Some(job_settings.clone()),
+                    url: Some(url.clone()),
+                    payload: Some(payload.clone()),
+                    word: Some(word.clone()),
+                };
+                if let Err(_) = tx.send(msg) {
+                    continue;
+                }
+            }
+        }
+
     // fuzz using both payloads, paths and wordlists, if they are both defined
     } else if !wordlists.is_empty() && !paths.is_empty() {
         for path in paths.iter() {
@@ -730,12 +750,35 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
         let job_payload_new = job_payload.clone();
         let job_url_new = job_url.clone();
         let job_host_new = job_host.clone();
-
         pb.inc(1);
 
+
+        let mut job_path:String = String::from("");
+        if job_path.is_empty() {
+            let mut _new_url = String::from(&job_url_new);
+            if job_payload_new.is_empty() == false {
+                _new_url = _new_url.replace("{payloads}", &job_payload_new);
+            }
+            if job_word.is_empty() == false {
+                _new_url = _new_url.replace("{words}", &job_word);
+            }
+            if job_path_new.is_empty() == false {
+                _new_url = _new_url.replace("{paths}", &job_path_new);
+            }
+            if job_host_new.is_empty() == false {
+                _new_url = _new_url.replace("{hosts}", &job_host);
+            }
+            let url = match reqwest::Url::parse(&_new_url) {
+                Ok(url) => url,
+                Err(_) => {
+                    continue;
+                },
+            };
+            job_path.push_str(&url.path().to_string());
+        }
         let mut _path = String::from(job_path);
         let mut _payload = String::from(job_payload);
-        let path_cnt = job_path_new.split("/").count() + 5;
+        let path_cnt = _path.split("/").count() + 5;
         let mut track_status_codes = 0;
         for _ in 0..path_cnt {
             let mut _new_url = String::from(&job_url_new);
