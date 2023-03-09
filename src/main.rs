@@ -27,7 +27,6 @@ use tokio::{fs::File, task};
 use colored::Colorize;
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 
-use urlencoding::encode;
 
 // the Job struct which will be used to define our settings for the job
 #[derive(Clone, Debug)]
@@ -64,7 +63,7 @@ fn print_banner() {
   / /_/ / /_/ / /_/ / / / /_/ / /_/ (__  ) /_/  __/ /    
  / .___/\__,_/\__/_/ /_/_.___/\__,_/____/\__/\___/_/     
 /_/                                                          
-                                v0.2.2                              
+                                v0.2.3                            
     "#;
     write!(&mut rainbowcoat::stdout(), "{}", BANNER).unwrap();
     println!(
@@ -103,7 +102,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     // parse the cli arguments
     let matches = App::new("pathbuster")
-        .version("0.2.2")
+        .version("0.2.3")
         .author("Blake Jacobs <blake@cyberlix.io")
         .about("path-normalization pentesting tool")
         .arg(
@@ -382,8 +381,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     // read the payloads file and append each line to an array.
     while let Ok(Some(payload)) = payload_lines.next_line().await {
-        let _payload = encode(&payload.to_string()).to_string();
-        payloads.push(_payload);
         payloads.push(payload);
     }
 
@@ -446,73 +443,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         wordlists.len().to_string().bold().cyan(),
         "lines".bold().white()
     );
-
-    // append some more payloads
-    for i in 0..=47 {
-        let i = char::from_u32(i).unwrap();
-        let _payload = encode(&i.to_string()).to_string();
-        // single url encoding bypass
-        if _payload.contains("%") {
-            payloads.push(_payload.to_string());
-        }
-        // double url encoding bypass
-        let _payload = encode(&_payload.to_string()).to_string();
-        if _payload.contains("%") {
-            payloads.push(_payload.to_string());
-        }
-    }
-    for i in 58..=63 {
-        let i = char::from_u32(i).unwrap();
-        let _payload = encode(&i.to_string()).to_string();
-        // single url encoding bypass
-        if _payload.contains("%") {
-            payloads.push(_payload.to_string());
-        }
-        // double url encoding bypass
-        let _payload = encode(&_payload.to_string()).to_string();
-        if _payload.contains("%") {
-            payloads.push(_payload.to_string());
-        }
-    }
-    for i in 91..=96 {
-        let i = char::from_u32(i).unwrap();
-        let _payload = encode(&i.to_string()).to_string();
-        // single url encoding bypass
-        if _payload.contains("%") {
-            payloads.push(_payload.to_string());
-        }
-        // double url encoding bypass
-        let _payload = encode(&_payload.to_string()).to_string();
-        if _payload.contains("%") {
-            payloads.push(_payload.to_string());
-        }
-    }
-    for i in 160..=844 {
-        let i = char::from_u32(i).unwrap();
-        let _payload = encode(&i.to_string()).to_string();
-        // single url encoding bypass
-        if _payload.contains("%") {
-            payloads.push(_payload.to_string());
-        }
-        // double url encoding bypass
-        let _payload = encode(&_payload.to_string()).to_string();
-        if _payload.contains("%") {
-            payloads.push(_payload.to_string());
-        }
-    }
-    for i in 8194..=8332 {
-        let i = char::from_u32(i).unwrap();
-        let _payload = encode(&i.to_string()).to_string();
-        // single url encoding bypass
-        if _payload.contains("%") {
-            payloads.push(_payload.to_string());
-        }
-        // double url encoding bypass
-        let _payload = encode(&_payload.to_string()).to_string();
-        if _payload.contains("%") {
-            payloads.push(_payload.to_string());
-        }
-    }
 
     // print the number of generated payloads.
     // set the message
@@ -603,9 +533,12 @@ async fn send_url(
 
     // only fuzz with hosts, paths and payloads, if the wordlist is not defined
     if !hosts.is_empty() && !paths.is_empty() {
-        for host in hosts.iter() {
-            for path in paths.iter() {
-                for payload in payloads.iter() {
+        'outer: for host in hosts.iter() {
+            'outer1: for path in paths.iter() {
+                for (i,payload) in payloads.iter().enumerate() {
+                    if i >= payloads.len()-1 {
+                        continue 'outer
+                    }
                     let msg = Job {
                         host: Some(host.clone()),
                         path: Some(path.clone()),
@@ -618,13 +551,17 @@ async fn send_url(
                         continue;
                     }
                 }
+                continue 'outer1;
             }
         }
 
     // fuzz using payloads in paths
     } else if !paths.is_empty() {
-        for path in paths.iter() {
-            for payload in payloads.iter() {
+        'outer: for path in paths.iter() {
+            for (i,payload) in payloads.iter().enumerate() {
+                if i >= payloads.len()-1 {
+                    continue 'outer
+                }
                 let msg = Job {
                     host: Some("".to_string()),
                     path: Some(path.clone()),
@@ -641,8 +578,11 @@ async fn send_url(
 
     // fuzz using wordlists and payloads
     } else if !wordlists.is_empty() {
-        for word in wordlists.iter() {
-            for payload in payloads.iter() {
+        'outer: for word in wordlists.iter()  {
+            for (i,payload) in payloads.iter().enumerate() {  
+                if i >= payloads.len()-1 {
+                    continue 'outer
+                }
                 let msg = Job {
                     host: Some("".to_string()),
                     path: Some("".to_string()),
@@ -659,9 +599,12 @@ async fn send_url(
 
     // fuzz using both payloads, paths and wordlists, if they are both defined
     } else if !wordlists.is_empty() && !paths.is_empty() {
-        for path in paths.iter() {
-            for payload in payloads.iter() {
-                for word in wordlists.iter() {
+        'outer: for word in wordlists.iter()  {
+            'outer1: for path in paths.iter() {
+                for (i,payload) in payloads.iter().enumerate() {
+                    if i >= payloads.len()-1 {
+                        continue 'outer
+                    }
                     let msg = Job {
                         host: Some("".to_string()),
                         path: Some(path.clone()),
@@ -674,15 +617,19 @@ async fn send_url(
                         continue;
                     }
                 }
+                continue 'outer1;
             }
         }
 
     // fuzz using both payloads, hosts, paths and wordlists, if they are both defined
     } else if !hosts.is_empty() && !paths.is_empty() && !wordlists.is_empty() {
-        for host in hosts.iter() {
-            for path in paths.iter() {
-                for payload in payloads.iter() {
-                    for word in wordlists.iter() {
+        'outer: for host in hosts.iter() {
+            'outer1: for path in paths.iter() {
+                'outer2: for word in wordlists.iter() {
+                    for (i,payload) in payloads.iter().enumerate() {
+                        if i >= payloads.len()-1 {
+                            continue 'outer2
+                        }
                         let msg = Job {
                             host: Some(host.clone()),
                             path: Some(path.clone()),
@@ -696,7 +643,9 @@ async fn send_url(
                         }
                     }
                 }
+                continue 'outer1
             }
+            continue 'outer
         }
 
     // require args are not specified
@@ -753,32 +702,38 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
         pb.inc(1);
 
 
-        let mut job_path:String = String::from("");
+        let mut _job_path:String = String::from("");
         if job_path.is_empty() {
             let mut _new_url = String::from(&job_url_new);
             if job_payload_new.is_empty() == false {
-                _new_url = _new_url.replace("{payloads}", &job_payload_new);
+                _new_url = _new_url.replace("{payloads}", "");
             }
             if job_word.is_empty() == false {
-                _new_url = _new_url.replace("{words}", &job_word);
+                _new_url = _new_url.replace("{words}", "");
             }
             if job_path_new.is_empty() == false {
-                _new_url = _new_url.replace("{paths}", &job_path_new);
+                _new_url = _new_url.replace("{paths}", "");
             }
             if job_host_new.is_empty() == false {
-                _new_url = _new_url.replace("{hosts}", &job_host);
+                _new_url = _new_url.replace("{hosts}", "");
             }
+            _new_url = match _new_url.strip_suffix("/") {
+                Some(_new_url) => _new_url.to_string(),
+                None => "".to_string(),
+            };
             let url = match reqwest::Url::parse(&_new_url) {
                 Ok(url) => url,
                 Err(_) => {
                     continue;
                 },
             };
-            job_path.push_str(&url.path().to_string());
+            _job_path.push_str(&url.path().to_string());
+        }else{
+            _job_path.push_str(&job_path);
         }
-        let mut _path = String::from(job_path);
+        let mut _path = String::from(_job_path);
         let mut _payload = String::from(job_payload);
-        let path_cnt = _path.split("/").count() + 5;
+        let path_cnt = _path.split("/").count() + 2;
         let mut track_status_codes = 0;
         for _ in 0..path_cnt {
             let mut _new_url = String::from(&job_url_new);
