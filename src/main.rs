@@ -63,7 +63,7 @@ fn print_banner() {
   / /_/ / /_/ / /_/ / / / /_/ / /_/ (__  ) /_/  __/ /    
  / .___/\__,_/\__/_/ /_/_.___/\__,_/____/\__/\___/_/     
 /_/                                                          
-                                v0.2.3                            
+                                v0.2.4                            
     "#;
     write!(&mut rainbowcoat::stdout(), "{}", BANNER).unwrap();
     println!(
@@ -102,7 +102,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     // parse the cli arguments
     let matches = App::new("pathbuster")
-        .version("0.2.3")
+        .version("0.2.4")
         .author("Blake Jacobs <blake@cyberlix.io")
         .about("path-normalization pentesting tool")
         .arg(
@@ -439,7 +439,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         "[".bold().white(),
         "+".bold().green(),
         "]".bold().white(),
-        "Tech Wordlist".bold().white(),
+        "Wordlists:".bold().white(),
         wordlists.len().to_string().bold().cyan(),
         "lines".bold().white()
     );
@@ -451,9 +451,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         "[".bold().white(),
         "+".bold().green(),
         "]".bold().white(),
-        "Generated".bold().white(),
-        payloads.len().to_string().bold().white(),
-        "payloads".bold().white()
+        "Payloads:".bold().white(),
+        payloads.len().to_string().bold().cyan(),
+        "lines".bold().white()
     );
 
     // spawn our workers
