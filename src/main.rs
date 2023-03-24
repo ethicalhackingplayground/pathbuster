@@ -61,7 +61,7 @@ fn print_banner() {
   / /_/ / /_/ / /_/ / / / /_/ / /_/ (__  ) /_/  __/ /    
  / .___/\__,_/\__/_/ /_/_.___/\__,_/____/\__/\___/_/     
 /_/                                                          
-                                v0.2.5                            
+                                v0.2.6                            
     "#;
     write!(&mut rainbowcoat::stdout(), "{}", BANNER).unwrap();
     println!(
@@ -100,7 +100,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     // parse the cli arguments
     let matches = App::new("pathbuster")
-        .version("0.2.5")
+        .version("0.2.6")
         .author("Blake Jacobs <blake@cyberlix.io")
         .about("path-normalization pentesting tool")
         .arg(
@@ -379,27 +379,28 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     }
 
     // set the message
+    println!("{}", "==================================================".bold().white());
     println!(
-        "{}{}{} {} {} {}",
+        "{}{}{} {} {}",
         "[".bold().white(),
         "+".bold().green(),
         "]".bold().white(),
-        "Payloads:".bold().white(),
+        "Num of Payloads :  ".bold().white(),
         payloads.len().to_string().bold().cyan(),
-        "lines".bold().white()
     );
 
     // print the number of generated payloads.
     // set the message
-    println!(
-        "{}{}{} {} {} {}\n",
+    print!(
+        "{}{}{} {} {}\n",
         "[".bold().white(),
         "+".bold().green(),
         "]".bold().white(),
-        "Urls:".bold().white(),
+        "Num of Urls     :  ".bold().white(),
         urls.len().to_string().bold().cyan(),
-        "lines".bold().white()
     );
+    println!("{}", "==================================================".bold().white());
+    println!("");
 
     // spawn our workers
     rt.spawn(async move {
