@@ -36,6 +36,7 @@ struct JobSettings {
     filter_body_size: String,
     filter_status: String,
     drop_after_fail: String,
+    verbose: bool,
 }
 
 // the Job struct which will be used to send to the workers
@@ -61,7 +62,7 @@ fn print_banner() {
   / /_/ / /_/ / /_/ / / / /_/ / /_/ (__  ) /_/  __/ /    
  / .___/\__,_/\__/_/ /_/_.___/\__,_/____/\__/\___/_/     
 /_/                                                          
-                                v0.2.6                            
+                                v0.2.7                            
     "#;
     write!(&mut rainbowcoat::stdout(), "{}", BANNER).unwrap();
     println!(
@@ -100,7 +101,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     // parse the cli arguments
     let matches = App::new("pathbuster")
-        .version("0.2.6")
+        .version("0.2.7")
         .author("Blake Jacobs <blake@cyberlix.io")
         .about("path-normalization pentesting tool")
         .arg(
@@ -186,6 +187,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
                 .long("workers")
                 .default_value("1")
                 .takes_value(true)
+                .help("The amount of workers"),
+        )
+        .arg(
+            Arg::with_name("verbose")
+                .short('v')
+                .long("verbose")
+                .default_value("false")
                 .help("The amount of workers"),
         )
         .arg(
@@ -284,6 +292,15 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         Some(filter_status) => filter_status,
         None => "".to_string(),
     };
+
+    let verbose = match matches.value_of("verbose").unwrap().parse::<bool>() {
+        Ok(verbose) => verbose,
+        Err(_) => {
+            false
+        }
+    };
+
+
     let outfile_path = match matches.value_of("out") {
         Some(outfile_path) => outfile_path,
         None => {
@@ -415,6 +432,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             filter_body_size,
             filter_status,
             drop_after_fail,
+            verbose,
         )
         .await
     });
@@ -460,6 +478,7 @@ async fn send_url(
     filter_body_size: String,
     filter_status: String,
     drop_after_fail: String,
+    verbose: bool
 ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     //set rate limit
     let lim = RateLimiter::direct(Quota::per_second(std::num::NonZeroU32::new(rate).unwrap()));
@@ -471,12 +490,14 @@ async fn send_url(
         deviation: deviation.to_string(),
         match_status: match_status.to_string(),
         drop_after_fail: drop_after_fail,
+        verbose: verbose
     };
 
-    // only fuzz with hosts, paths and payloads, if the wordlist is not defined
+    // start the scan
     for url in urls.iter() {
         for word in wordlist.iter() {
             for payload in payloads.iter() {
+                lim.until_ready().await;
                 let msg = Job {
                     url: Some(url.clone()),
                     settings: Some(job_settings.clone()),
@@ -489,7 +510,6 @@ async fn send_url(
             }
         }
     }
-    lim.until_ready().await;
     Ok(())
 }
 
@@ -546,6 +566,17 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
             let mut _new_url = String::from(&_job_url);
             _new_url.push_str(&_payload);
             _new_url.push_str(&job_word);
+
+            if job_settings.verbose == true {
+                pb.println(format!(
+                    "{}{}{} {} {}",
+                    "[".bold().white(),
+                    "*".bold().cyan(),
+                    "]".bold().white(),
+                    "Scanning Url ".bold().white(),
+                    _new_url.dimmed().white(),
+                ));
+            }
 
             let mut url = String::from("");
             url.push_str(&_new_url);

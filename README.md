@@ -96,6 +96,9 @@ OPTIONS:
     -u, --urls <urls>
             the url you would like to test
 
+    -v, --verbose <verbose>
+            The amount of workers [default: false]
+
     -V, --version
             Print version information
 
@@ -121,6 +124,7 @@ OPTIONS:
 | --rate | used set the maximum in-flight requests per second |
 | --workers | number of workers to process the jobs |
 | --concurrency | number of threads to be used for processing |
+| --verbose | prints everything |
 | --out | save output to a file |
 | --help | prints help information |
 | --version | prints version information |
