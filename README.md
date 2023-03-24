@@ -3,7 +3,7 @@
   <br>
 </h1>
 
-<h4 align="center">A path-normalization pentesting tool using path replacements.</h4>
+<h4 align="center">A path-normalization pentesting tool</h4>
 
 <p align="center">
   <a href="/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg"/></a>
@@ -30,7 +30,6 @@
 
 ### Todos
 
-- [x] Implement multiple host scanning using the replacement `{hosts}`.
 - [x] Implement **--filter-status** which will filter the status codes.
 - [x] Implement **--filter-body-size** which will filter the response sizes.
 - [x] Implement **--drop-after-fail** which will ignore requests with the same response code multiple times in a row.
@@ -61,7 +60,7 @@ This command will show the tool's help information and present a list of all the
 
 ```
 USAGE:
-    pathbuster [OPTIONS] --url <url> --payloads <payloads> --deviation <deviation>
+    pathbuster [OPTIONS] --urls <urls> --payloads <payloads> --wordlist <wordlist> --deviation <deviation>
 
 OPTIONS:
     -c, --concurrency <concurrency>
@@ -82,17 +81,11 @@ OPTIONS:
     -h, --help
             Print help information
 
-        --hosts <hosts>
-            the file containing the list of root domains [default: ]
-
         --match-status <match-status>
             [default: 200]
 
     -o, --out <out>
             The output file
-
-        --paths <paths>
-            the file containing the list of routes (crawl the host to collect routes) [default: ]
 
         --payloads <payloads>
             the file containing the traversal payloads [default: ./payloads/traversals.txt]
@@ -100,7 +93,7 @@ OPTIONS:
     -r, --rate <rate>
             Maximum in-flight requests per second [default: 1000]
 
-    -u, --url <url>
+    -u, --urls <urls>
             the url you would like to test
 
     -V, --version
@@ -110,18 +103,16 @@ OPTIONS:
             The amount of workers [default: 1]
 
         --wordlist <wordlist>
-            the file containing the technology paths [default: ]
+            the file containing the wordlist for discovery [default: ./wordlists/wordlist.txt]
 ```
 
 ## Flags
 
 | Flag             | Description                                                                |
 | ----------------- | ------------------------------------------------------------------ |
-| --url |  url you would like to test
-| --paths | file containing the route place holder is **{paths}** |
-| --payloads | file containing the payloads place holder is **{payloads}** |
-| --hosts |  file containing the root domains place holder is **{hosts}** |
-| --wordlist |  file containing the technology wordlist **{words}** |
+| --urls | the file containing the urls to test make sure it contains a path
+| --payloads | file containing the payloads to test |
+| --wordlist |  file containing the technology wordlist |
 | --match-status |  status code used to match internal responses |
 | --filter-body-size |  used to filter the response body like ffuf  |
 | --filter-status |  used to filter the response status code like ffuf  |
@@ -136,22 +127,10 @@ OPTIONS:
 
 ## Examples
 
-Fingerprinting the proxy
+Usage:
 
 ```rust
-$ pathbuster -u "https://example.com/{paths}/{payloads}" --payloads traversals.txt --paths paths.txt --match-status 400 --deviation 2 -o output.txt
-```
-
-Discovery process for a single URL
-
-```rust
-$ pathbuster -u "https://example.com/{paths}/{payloads}/{words}" --payloads traversals.txt --paths paths.txt --wordlist raft-medium-directories.txt --match-status 200 --deviation 2 -o output.txt
-```
-
-Discovery process using host replacements
-
-```rust
-$ pathbuster -u "https://{hosts}/{paths}/{payloads}/{words}" --hosts roots.txt --payloads traversals.txt --paths paths.txt --wordlist raft-medium-directories.txt --match-status 200 --deviation 2 -o output.txt
+$ pathbuster --urls urls.txt --payloads traversals.txt --wordlist raft-medium-directories.txt --match-status 200 --deviation 2 -o output.txt
 ```
 
 ![Screenshot](static/example.png)
@@ -164,10 +143,6 @@ to discuss what you would like to change.
 
 Please make sure to update tests as appropriate.
 
-
-## Support
-
-For support, email blake@cyberlix.io or join our Discord group.
 
 ## License
 
