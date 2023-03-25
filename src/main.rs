@@ -35,7 +35,6 @@ use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 #[derive(Clone, Debug)]
 struct JobSettings {
     match_status: String,
-    filter_status: String,
     drop_after_fail: String,
     verbose: bool,
 }
@@ -190,7 +189,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             Arg::with_name("filter-status")
                 .long("filter-status")
                 .takes_value(true)
-                .default_value("302,301")
+                .default_value("302,301,400,403,404,500,303")
                 .required(false),
         )
         .arg(
@@ -446,7 +445,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             payloads,
             rate,
             match_status,
-            filter_status,
             drop_after_fail,
             verbose,
         )
@@ -497,16 +495,15 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         .arg("-w")
         .arg(_w2)
         .arg("-t")
-        .arg(100)
+        .arg("100")
         .arg("-fs")
         .arg(_filter_body_size)
-        .arg("fc")
+        .arg("-fc")
         .arg(_filter_status)
         .arg("-o")
         .arg(_output_results)
-        .arg("of")
+        .arg("-of")
         .arg("html")
-        .arg("")
         .output()
         .expect("failed to execute process");
 
@@ -543,7 +540,6 @@ async fn send_url(
     payloads: Vec<String>,
     rate: u32,
     match_status: String,
-    filter_status: String,
     drop_after_fail: String,
     verbose: bool,
 ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
@@ -555,7 +551,6 @@ async fn send_url(
         match_status: match_status.to_string(),
         drop_after_fail: drop_after_fail,
         verbose: verbose,
-        filter_status: filter_status,
     };
 
     // start the scan
@@ -731,14 +726,6 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
                         && str_distance > 0
                         && result_url.contains(&job_payload_new)
                     {
-                        if response
-                            .status()
-                            .to_string()
-                            .contains(&job_settings.filter_status)
-                        {
-                            return;
-                        }
-
                         // track the status codes
                         if job_settings.drop_after_fail == response.status().as_str() {
                             track_status_codes += 1;
