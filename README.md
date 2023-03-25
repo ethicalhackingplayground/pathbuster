@@ -73,7 +73,7 @@ OPTIONS:
             [default: 0]
 
         --filter-status <filter-status>
-            [default: 302,301]
+            [default: 404,403,401,302,301,500,303,501,502]
 
     -h, --help
             Print help information
@@ -89,6 +89,9 @@ OPTIONS:
 
     -r, --rate <rate>
             Maximum in-flight requests per second [default: 1000]
+
+        --timeout <timeout>
+            The delay between each request [default: 10]
 
     -u, --urls <urls>
             the url you would like to test
@@ -119,6 +122,7 @@ OPTIONS:
 | --drop-after-fail |  specify a status code to ignore if it reoccurs more than 5 times in a row  |
 | --rate | used set the maximum in-flight requests per second |
 | --workers | number of workers to process the jobs |
+| --timeout | the delay between each request |
 | --concurrency | number of threads to be used for processing |
 | --verbose | prints everything |
 | --out | save output to a file |

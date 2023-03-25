@@ -627,8 +627,7 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
         let mut job_url: String = String::from("");
         let url = match reqwest::Url::parse(&job_url_new) {
             Ok(url) => url,
-            Err(e) => {
-                pb.println(format!("{}", e.to_string().bold().red()));
+            Err(_) => {
                 continue;
             },
         };
@@ -674,16 +673,14 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
             let get = client.get(new_url);
             let req = match get.build() {
                 Ok(req) => req,
-                Err(e) => {
-                    pb.println(format!("{}", e.to_string().bold().red()));
+                Err(_) => {
                     continue;
                 },
             };
 
             let resp = match client.execute(req).await {
                 Ok(resp) => resp,
-                Err(e) => {
-                    pb.println(format!("{}", e.to_string().bold().red()));
+                Err(_) => {
                     continue;
                 },
             };
@@ -726,15 +723,13 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
                     let get = client.get(backonemore);
                     let request = match get.build() {
                         Ok(request) => request,
-                        Err(e) => {
-                            pb.println(format!("{}", e.to_string().bold().red()));
+                        Err(_) => {
                             continue;
                         },
                     };
                     let response = match client.execute(request).await {
                         Ok(response) => response,
-                        Err(e) => {
-                            pb.println(format!("{}", e.to_string().bold().red()));
+                        Err(_) => {
                             continue;
                         },
                     };
