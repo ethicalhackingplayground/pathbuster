@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::error::Error;
 use std::io::Write;
+use std::process::Stdio;
 use std::process::exit;
 use std::process::Command;
 use std::time::Duration;
@@ -189,7 +190,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             Arg::with_name("filter-status")
                 .long("filter-status")
                 .takes_value(true)
-                .default_value("302,301,400,403,404,500,303")
+                .default_value("404,403,401,302,301,500,303,501,502")
                 .required(false),
         )
         .arg(
@@ -470,8 +471,10 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     let elapsed_time = now.elapsed();
     rt.shutdown_background();
 
+    println!("");
+    println!("");
     println!(
-        "\n{}{}{} {}\n",
+        "{}{}{} {}\n",
         "[".bold().white(),
         "RUN".bold().green(),
         "]".bold().white(),
@@ -485,15 +488,19 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     // result output name for ffuf
     let id = Uuid::new_v4();
-    let mut _output_results = String::from(id.to_string());
-    _output_results.push_str(".html");
-    let output = Command::new("ffuf")
+    let mut _output_results = String::from("pathbuster-");
+    _output_results.push_str(&id.to_string());
+    _output_results.push_str(".txt");
+    let child  = Command::new("ffuf")
         .arg("-u")
         .arg("W1W2")
         .arg("-w")
         .arg(_w1)
         .arg("-w")
         .arg(_w2)
+        .arg("-v")
+        .arg("-c")
+        .arg("-s")
         .arg("-t")
         .arg("100")
         .arg("-fs")
@@ -502,11 +509,16 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         .arg(_filter_status)
         .arg("-o")
         .arg(_output_results)
-        .arg("-of")
-        .arg("html")
-        .output()
+        .stdout(Stdio::inherit())
+        .spawn()
         .expect("failed to execute process");
+    
+    let output = child
+    .wait_with_output()
+    .expect("failed to wait on child");
 
+
+    
     if String::from_utf8_lossy(&output.stderr).is_empty() {
         println!(
             "{} {}",
@@ -584,7 +596,7 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
     let client = reqwest::Client::builder()
         .default_headers(headers)
         .redirect(redirect::Policy::none())
-        .timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(3))
         .danger_accept_invalid_hostnames(true)
         .danger_accept_invalid_certs(true)
         .build()
