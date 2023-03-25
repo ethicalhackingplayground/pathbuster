@@ -733,10 +733,6 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
                         && str_distance > 0
                         && result_url.contains(&job_payload_new)
                     {
-                        if job_settings.filter_body_size.contains(&content_length) {
-                            return;
-                        }
-
                         if response
                             .status()
                             .to_string()
