@@ -1,8 +1,8 @@
 [package]
 name = "pathbuster"
-authors = ["zoid", "<blake@cyberlix.io>"]
-description = "A path-normalization pentesting tool using path replacements."
-version = "0.2.9"
+authors = ["zoid", "<krypt0mux@gmail.com>"]
+description = "A path-normalization pentesting tool."
+version = "0.3.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/ethicalhackingplayground/pathbuster"
@@ -20,7 +20,6 @@ indicatif = "0.17.3"
 spmc = "0.3.0"
 clap =  { version = "^3.0.0-beta.2" }
 reqwest = { version = "0.11.14", features = ["native-tls", "blocking"] }
-levenshtein = "1.0.5"
 rainbowcoat = "0.1.0"
 
 

@@ -6,8 +6,6 @@ use std::process::exit;
 use std::process::Command;
 use std::time::Duration;
 
-use levenshtein::levenshtein;
-
 use uuid::Uuid;
 
 use clap::App;
@@ -106,7 +104,7 @@ fn print_banner() {
   / /_/ / /_/ / /_/ / / / /_/ / /_/ (__  ) /_/  __/ /    
  / .___/\__,_/\__/_/ /_/_.___/\__,_/____/\__/\___/_/     
 /_/                                                          
-                                v0.2.9                            
+                                v0.3.0                            
     "#;
     write!(&mut rainbowcoat::stdout(), "{}", BANNER).unwrap();
     println!(
@@ -218,6 +216,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
                 .help("The amount of concurrent requests"),
         )
         .arg(
+            Arg::with_name("timeout")
+                .long("timeout")
+                .default_value("10")
+                .takes_value(true)
+                .help("The delay between each request"),
+        )
+        .arg(
             Arg::with_name("workers")
                 .short('w')
                 .long("workers")
@@ -322,6 +327,15 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         None => "".to_string(),
     };
     let _filter_status = filter_status.clone();
+
+    let timeout = match matches
+        .get_one::<String>("timeout")
+        .map(|s| s.to_string())
+    {
+        Some(timeout) => timeout.parse::<usize>().unwrap(),
+        None => 10,
+    };
+
 
     let verbose = match matches.value_of("verbose").unwrap().parse::<bool>() {
         Ok(verbose) => verbose,
@@ -463,12 +477,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         let rx = job_rx.clone();
         let tx: mpsc::Sender<JobResult> = result_tx.clone();
         let pb = pb.clone();
-        workers.push(task::spawn(async move { run_tester(pb, rx, tx).await }));
+        workers.push(task::spawn(async move { run_tester(pb, rx, tx, timeout).await }));
     }
 
     // print the results
     let _results: Vec<_> = workers.collect().await;
-    let elapsed_time = now.elapsed();
     rt.shutdown_background();
 
     println!("");
@@ -490,7 +503,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     let id = Uuid::new_v4();
     let mut _output_results = String::from("pathbuster-");
     _output_results.push_str(&id.to_string());
-    _output_results.push_str(".txt");
+    _output_results.push_str(".json");
     let child  = Command::new("ffuf")
         .arg("-u")
         .arg("W1W2")
@@ -527,6 +540,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     } else {
         println!("{}", String::from_utf8_lossy(&output.stderr).bold().red());
     }
+
+    let elapsed_time = now.elapsed();
 
     println!(
         "{}, {} {}{}",
@@ -567,7 +582,6 @@ async fn send_url(
     // start the scan
     for url in urls.iter() {
         for payload in payloads.iter() {
-            lim.until_ready().await;
             let msg = Job {
                 url: Some(url.clone()),
                 settings: Some(job_settings.clone()),
@@ -576,13 +590,14 @@ async fn send_url(
             if let Err(_) = tx.send(msg) {
                 continue;
             }
+            lim.until_ready().await;
         }
     }
     Ok(())
 }
 
 // this function will test for path normalization vulnerabilities
-async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<JobResult>) {
+async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<JobResult>, timeout:usize) {
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert(
         reqwest::header::USER_AGENT,
@@ -595,7 +610,7 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
     let client = reqwest::Client::builder()
         .default_headers(headers)
         .redirect(redirect::Policy::none())
-        .timeout(Duration::from_secs(3))
+        .timeout(Duration::from_secs(timeout.try_into().unwrap()))
         .danger_accept_invalid_hostnames(true)
         .danger_accept_invalid_certs(true)
         .build()
@@ -612,7 +627,10 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
         let mut job_url: String = String::from("");
         let url = match reqwest::Url::parse(&job_url_new) {
             Ok(url) => url,
-            Err(_) => continue,
+            Err(e) => {
+                pb.println(format!("{}", e.to_string().bold().red()));
+                continue;
+            },
         };
 
         let schema = url.scheme().to_string();
@@ -621,20 +639,6 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
             Some(host) => host,
             None => continue,
         };
-
-        // blacklist file extensions
-        if path == "/"
-            || path == ""
-            || path.ends_with(".js")
-            || path.ends_with(".css")
-            || path.ends_with(".png")
-            || path.ends_with(".ico")
-            || path.ends_with(".jpg")
-            || path.ends_with(".woff")
-            || path.ends_with(".svg")
-        {
-            continue;
-        }
 
         job_url.push_str(&schema);
         job_url.push_str("://");
@@ -670,12 +674,18 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
             let get = client.get(new_url);
             let req = match get.build() {
                 Ok(req) => req,
-                Err(_) => continue,
+                Err(e) => {
+                    pb.println(format!("{}", e.to_string().bold().red()));
+                    continue;
+                },
             };
 
             let resp = match client.execute(req).await {
                 Ok(resp) => resp,
-                Err(_) => continue,
+                Err(e) => {
+                    pb.println(format!("{}", e.to_string().bold().red()));
+                    continue;
+                },
             };
 
             // fetch the server from the headers
@@ -716,25 +726,21 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
                     let get = client.get(backonemore);
                     let request = match get.build() {
                         Ok(request) => request,
-                        Err(_) => continue,
+                        Err(e) => {
+                            pb.println(format!("{}", e.to_string().bold().red()));
+                            continue;
+                        },
                     };
                     let response = match client.execute(request).await {
                         Ok(response) => response,
-                        Err(_) => continue,
+                        Err(e) => {
+                            pb.println(format!("{}", e.to_string().bold().red()));
+                            continue;
+                        },
                     };
-
-                    let content_length_2 = match response.content_length() {
-                        Some(content_length_2) => content_length_2.to_string(),
-                        None => { "" }.to_owned(),
-                    };
-
-                    // compute the levenshtein between the two responses
-                    let str_distance = levenshtein(&content_length_2, &content_length);
 
                     // we git the internal doc root.
                     if (response.status().as_str() == "404" || response.status().as_str() == "500")
-                        && content_length_2 != content_length
-                        && str_distance > 0
                         && result_url.contains(&job_payload_new)
                     {
                         // track the status codes
