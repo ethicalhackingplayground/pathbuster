@@ -60,14 +60,11 @@ This command will show the tool's help information and present a list of all the
 
 ```
 USAGE:
-    pathbuster [OPTIONS] --urls <urls> --payloads <payloads> --wordlist <wordlist> --deviation <deviation>
+    pathbuster [OPTIONS] --urls <urls> --payloads <payloads> --wordlist <wordlist>
 
 OPTIONS:
     -c, --concurrency <concurrency>
-            The amount of concurrent requests [default: 100]
-
-        --deviation <deviation>
-            The distance between the responses [default: 3]
+            The amount of concurrent requests [default: 1000]
 
         --drop-after-fail <drop-after-fail>
             ignore requests with the same response code multiple times in a row [default: 302,301]
@@ -82,7 +79,7 @@ OPTIONS:
             Print help information
 
         --match-status <match-status>
-            [default: 200]
+            [default: 400]
 
     -o, --out <out>
             The output file
@@ -120,7 +117,6 @@ OPTIONS:
 | --filter-body-size |  used to filter the response body like ffuf  |
 | --filter-status |  used to filter the response status code like ffuf  |
 | --drop-after-fail |  specify a status code to ignore if it reoccurs more than 5 times in a row  |
-| --deviation |  used to compare responses for deviations compares ../internalpath to /internalpath  |
 | --rate | used set the maximum in-flight requests per second |
 | --workers | number of workers to process the jobs |
 | --concurrency | number of threads to be used for processing |
@@ -134,7 +130,7 @@ OPTIONS:
 Usage:
 
 ```rust
-$ pathbuster --urls urls.txt --payloads traversals.txt --wordlist raft-medium-directories.txt --match-status 200 --deviation 2 -o output.txt
+$ pathbuster --urls crawls.txt --payloads traversals.txt --wordlist raft-medium-directories.txt -o output.txt
 ```
 
 ![Screenshot](static/example.png)
