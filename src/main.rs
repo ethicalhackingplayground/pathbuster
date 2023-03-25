@@ -35,7 +35,6 @@ use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 #[derive(Clone, Debug)]
 struct JobSettings {
     match_status: String,
-    filter_body_size: String,
     filter_status: String,
     drop_after_fail: String,
     verbose: bool,
@@ -447,7 +446,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             payloads,
             rate,
             match_status,
-            filter_body_size,
             filter_status,
             drop_after_fail,
             verbose,
@@ -498,6 +496,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         .arg(_w1)
         .arg("-w")
         .arg(_w2)
+        .arg("-t")
+        .arg(100)
         .arg("-fs")
         .arg(_filter_body_size)
         .arg("fc")
@@ -543,7 +543,6 @@ async fn send_url(
     payloads: Vec<String>,
     rate: u32,
     match_status: String,
-    filter_body_size: String,
     filter_status: String,
     drop_after_fail: String,
     verbose: bool,
@@ -556,7 +555,6 @@ async fn send_url(
         match_status: match_status.to_string(),
         drop_after_fail: drop_after_fail,
         verbose: verbose,
-        filter_body_size: filter_body_size,
         filter_status: filter_status,
     };
 
