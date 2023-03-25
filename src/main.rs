@@ -106,7 +106,7 @@ fn print_banner() {
   / /_/ / /_/ / /_/ / / / /_/ / /_/ (__  ) /_/  __/ /    
  / .___/\__,_/\__/_/ /_/_.___/\__,_/____/\__/\___/_/     
 /_/                                                          
-                                v0.2.8                            
+                                v0.2.9                            
     "#;
     write!(&mut rainbowcoat::stdout(), "{}", BANNER).unwrap();
     println!(
@@ -423,7 +423,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     // set the message
     println!(
-        "{} {} {}\t{} {} {}\t{} {} {}  {} {}",
+        "{} {} {}\t{} {} {}  {} {} {}  {} {}",
         "Payloads:".bold().white(),
         payloads.len().to_string().bold().cyan(),
         ":".bold().green(),
@@ -500,7 +500,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         .arg(_w2)
         .arg("-v")
         .arg("-c")
-        .arg("-s")
         .arg("-t")
         .arg("100")
         .arg("-fs")
