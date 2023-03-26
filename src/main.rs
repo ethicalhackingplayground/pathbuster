@@ -1,12 +1,10 @@
 use std::collections::HashMap;
 use std::error::Error;
 use std::io::Write;
-use std::process::Stdio;
 use std::process::exit;
-use std::process::Command;
 use std::time::Duration;
 
-use uuid::Uuid;
+use regex::Regex;
 
 use clap::App;
 use clap::Arg;
@@ -104,7 +102,7 @@ fn print_banner() {
   / /_/ / /_/ / /_/ / / / /_/ / /_/ (__  ) /_/  __/ /    
  / .___/\__,_/\__/_/ /_/_.___/\__,_/____/\__/\___/_/     
 /_/                                                          
-                                v0.3.1                            
+                                v0.3.2                            
     "#;
     write!(&mut rainbowcoat::stdout(), "{}", BANNER).unwrap();
     println!(
@@ -143,7 +141,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     // parse the cli arguments
     let matches = App::new("pathbuster")
-        .version("0.3.1")
+        .version("0.3.2")
         .author("Blake Jacobs <blake@cyberlix.io")
         .about("path-normalization pentesting tool")
         .arg(
@@ -198,14 +196,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
                 .takes_value(true)
                 .default_value("./payloads/traversals.txt")
                 .help("the file containing the traversal payloads"),
-        )
-        .arg(
-            Arg::with_name("wordlist")
-                .long("wordlist")
-                .required(true)
-                .takes_value(true)
-                .default_value("./wordlists/wordlist.txt")
-                .help("the file containing the wordlist for discovery"),
         )
         .arg(
             Arg::with_name("concurrency")
@@ -271,12 +261,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             1000
         }
     };
-
-    let wordlist_path = match matches.get_one::<String>("wordlist").map(|s| s.to_string()) {
-        Some(wordlist_path) => wordlist_path,
-        None => "".to_string(),
-    };
-    let _wordlist_path = wordlist_path.clone();
 
     let drop_after_fail = match matches
         .get_one::<String>("drop-after-fail")
@@ -397,7 +381,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     let mut urls = vec![];
     let mut payloads = vec![];
-    let mut wordlist = vec![];
 
     let payload_buf = BufReader::new(payloads_handle);
     let mut payload_lines = payload_buf.lines();
@@ -405,20 +388,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     // read the payloads file and append each line to an array.
     while let Ok(Some(payload)) = payload_lines.next_line().await {
         payloads.push(payload);
-    }
-
-    // read the hosts file if specified and append each line to an array.
-    let wordlist_handle = match File::open(wordlist_path).await {
-        Ok(wordlist_handle) => wordlist_handle,
-        Err(e) => {
-            pb.println(format!("failed to open input file: {:?}", e));
-            exit(1);
-        }
-    };
-    let wordlist_buf = BufReader::new(wordlist_handle);
-    let mut wordlist_lines = wordlist_buf.lines();
-    while let Ok(Some(word)) = wordlist_lines.next_line().await {
-        wordlist.push(word);
     }
 
     // read the hosts file if specified and append each line to an array.
@@ -483,63 +452,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     // print the results
     let _results: Vec<_> = workers.collect().await;
     rt.shutdown_background();
-
-    println!("");
-    println!("");
-    println!(
-        "{}{}{} {}\n",
-        "[".bold().white(),
-        "RUN".bold().green(),
-        "]".bold().white(),
-        "Directory bruteforcing Using FFuf".bold().white(),
-    );
-
-    let mut _w1 = String::from(outfile_path);
-    _w1.push_str(":W1");
-    let mut _w2 = String::from(_wordlist_path);
-    _w2.push_str(":W2");
-
-    // result output name for ffuf
-    let id = Uuid::new_v4();
-    let mut _output_results = String::from("pathbuster-");
-    _output_results.push_str(&id.to_string());
-    _output_results.push_str(".json");
-    let child  = Command::new("ffuf")
-        .arg("-u")
-        .arg("W1W2")
-        .arg("-w")
-        .arg(_w1)
-        .arg("-w")
-        .arg(_w2)
-        .arg("-v")
-        .arg("-c")
-        .arg("-t")
-        .arg("100")
-        .arg("-fs")
-        .arg(_filter_body_size)
-        .arg("-fc")
-        .arg(_filter_status)
-        .arg("-o")
-        .arg(_output_results)
-        .stdout(Stdio::inherit())
-        .spawn()
-        .expect("failed to execute process");
-    
-    let output = child
-    .wait_with_output()
-    .expect("failed to wait on child");
-
-
-    
-    if String::from_utf8_lossy(&output.stderr).is_empty() {
-        println!(
-            "{} {}",
-            ">".bold().blue(),
-            String::from_utf8_lossy(&output.stdout).bold().white()
-        );
-    } else {
-        println!("{}", String::from_utf8_lossy(&output.stderr).bold().red());
-    }
 
     let elapsed_time = now.elapsed();
 
@@ -734,6 +646,22 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
                         },
                     };
 
+
+                    let get = client.get(backonemore);
+                    let request = match get.build() {
+                        Ok(request) => request,
+                        Err(_) => {
+                            continue;
+                        },
+                    };
+                    let response_title = match client.execute(request).await {
+                        Ok(response_title) => response_title,
+                        Err(_) => {
+                            continue;
+                        },
+                    };
+
+
                     // we git the internal doc root.
                     if (response.status().as_str() == "404" || response.status().as_str() == "500")
                         && result_url.contains(&job_payload_new)
@@ -758,6 +686,19 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
                             }
                         }
 
+                        let mut title = String::from("");
+
+                        let content = match response_title.text().await {
+                            Ok(content) => content,
+                            Err(_) => "".to_string(),
+                        };
+
+                        let re = Regex::new(r"<title>(.*?)</title>").unwrap();
+
+                        for cap in re.captures_iter(&content) {
+                            title.push_str(&cap[1]);
+                        }
+
                         // fetch the server from the headers
                         let server = match response.headers().get("Server") {
                             Some(server) => match server.to_str() {
@@ -769,120 +710,180 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
 
                         if response.status().is_client_error() {
                             pb.println(format!(
-                                "{}{}{} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t",
+                                "{}{}{} {}{}{}\n {} {}{}{}\n\t {}{}{} {}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t",
                                 "[".bold().white(),
                                 "OK".bold().green(),
                                 "]".bold().white(),
                                 "[".bold().white(),
                                 result_url.bold().cyan(),
                                 "]".bold().white(),
+                                "[".bold().white(),
+                                "*".bold().green(),
+                                "]".bold().white(),
+                                "Details:".bold().white(),
+                                "payload:".bold().white(),
+                                "[".bold().white(),
+                                job_payload_new.as_str().bold().blue(),
+                                "]".bold().white(),
                                 "status:".bold().white(),
                                 "[".bold().white(),
                                 response.status().as_str().bold().blue(),
                                 "]".bold().white(),
-                                "response_size:".bold().white(),
+                                "content_legnth:".bold().white(),
                                 "[".bold().white(),
                                 content_length.yellow(),
                                 "]".bold().white(),
                                 "server:".bold().white(),
                                 "[".bold().white(),
                                 server.bold().purple(),
+                                "]".bold().white(),
+                                "title:".bold().white(),
+                                "[".bold().white(),
+                                title.bold().purple(),
                                 "]".bold().white(),
                             ));
                         }
 
                         if response.status().is_success() {
                             pb.println(format!(
-                                "{}{}{} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t",
+                                "{}{}{} {}{}{}\n {} {}{}{}\n\t {}{}{} {}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t",
                                 "[".bold().white(),
                                 "OK".bold().green(),
                                 "]".bold().white(),
                                 "[".bold().white(),
                                 result_url.bold().cyan(),
                                 "]".bold().white(),
-                                "status:".bold().green(),
                                 "[".bold().white(),
-                                response.status().as_str().bold().blue(),
+                                "*".bold().green(),
                                 "]".bold().white(),
-                                "response_size:".bold().white(),
+                                "Details:".bold().white(),
+                                "payload:".bold().white(),
+                                "[".bold().white(),
+                                job_payload_new.as_str().bold().blue(),
+                                "]".bold().white(),
+                                "status:".bold().white(),
+                                "[".bold().white(),
+                                response.status().as_str().bold().green(),
+                                "]".bold().white(),
+                                "content_legnth:".bold().white(),
                                 "[".bold().white(),
                                 content_length.yellow(),
                                 "]".bold().white(),
                                 "server:".bold().white(),
                                 "[".bold().white(),
                                 server.bold().purple(),
+                                "]".bold().white(),
+                                "title:".bold().white(),
+                                "[".bold().white(),
+                                title.bold().purple(),
                                 "]".bold().white(),
                             ));
                         }
 
                         if response.status().is_redirection() {
                             pb.println(format!(
-                                "{}{}{} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t",
+                                "{}{}{} {}{}{}\n {} {}{}{}\n\t {}{}{} {}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t",
                                 "[".bold().white(),
                                 "OK".bold().green(),
                                 "]".bold().white(),
                                 "[".bold().white(),
                                 result_url.bold().cyan(),
                                 "]".bold().white(),
-                                "status:".bold().cyan(),
+                                "[".bold().white(),
+                                "*".bold().green(),
+                                "]".bold().white(),
+                                "Details:".bold().white(),
+                                "payload:".bold().white(),
+                                "[".bold().white(),
+                                job_payload_new.as_str().bold().blue(),
+                                "]".bold().white(),
+                                "status:".bold().white(),
                                 "[".bold().white(),
                                 response.status().as_str().bold().blue(),
                                 "]".bold().white(),
-                                "response_size:".bold().white(),
+                                "content_legnth:".bold().white(),
                                 "[".bold().white(),
                                 content_length.yellow(),
                                 "]".bold().white(),
                                 "server:".bold().white(),
                                 "[".bold().white(),
                                 server.bold().purple(),
+                                "]".bold().white(),
+                                "title:".bold().white(),
+                                "[".bold().white(),
+                                title.bold().purple(),
                                 "]".bold().white(),
                             ));
                         }
 
                         if response.status().is_server_error() {
                             pb.println(format!(
-                                "{}{}{} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t",
+                                "{}{}{} {}{}{}\n {} {}{}{}\n\t {}{}{} {}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t",
                                 "[".bold().white(),
                                 "OK".bold().green(),
                                 "]".bold().white(),
                                 "[".bold().white(),
                                 result_url.bold().cyan(),
                                 "]".bold().white(),
+                                "[".bold().white(),
+                                "*".bold().green(),
+                                "]".bold().white(),
+                                "Details:".bold().white(),
+                                "payload:".bold().white(),
+                                "[".bold().white(),
+                                job_payload_new.as_str().bold().blue(),
+                                "]".bold().white(),
                                 "status:".bold().white(),
                                 "[".bold().white(),
                                 response.status().as_str().bold().red(),
                                 "]".bold().white(),
-                                "response_size:".bold().white(),
+                                "content_legnth:".bold().white(),
                                 "[".bold().white(),
                                 content_length.yellow(),
                                 "]".bold().white(),
                                 "server:".bold().white(),
                                 "[".bold().white(),
                                 server.bold().purple(),
+                                "]".bold().white(),
+                                "title:".bold().white(),
+                                "[".bold().white(),
+                                title.bold().purple(),
                                 "]".bold().white(),
                             ));
                         }
 
                         if response.status().is_informational() {
                             pb.println(format!(
-                                "{}{}{} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t",
+                                "{}{}{} {}{}{}\n {} {}{}{}\n\t {}{}{} {}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t",
                                 "[".bold().white(),
                                 "OK".bold().green(),
                                 "]".bold().white(),
                                 "[".bold().white(),
                                 result_url.bold().cyan(),
                                 "]".bold().white(),
+                                "[".bold().white(),
+                                "*".bold().green(),
+                                "]".bold().white(),
+                                "Details:".bold().white(),
+                                "payload:".bold().white(),
+                                "[".bold().white(),
+                                job_payload_new.as_str().bold().blue(),
+                                "]".bold().white(),
                                 "status:".bold().white(),
                                 "[".bold().white(),
                                 response.status().as_str().bold().purple(),
                                 "]".bold().white(),
-                                "response_size:".bold().white(),
+                                "content_legnth:".bold().white(),
                                 "[".bold().white(),
                                 content_length.yellow(),
                                 "]".bold().white(),
                                 "server:".bold().white(),
                                 "[".bold().white(),
                                 server.bold().purple(),
+                                "]".bold().white(),
+                                "title:".bold().white(),
+                                "[".bold().white(),
+                                title.bold().purple(),
                                 "]".bold().white(),
                             ));
                         }

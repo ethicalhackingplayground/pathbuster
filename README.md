@@ -104,9 +104,6 @@ OPTIONS:
 
     -w, --workers <workers>
             The amount of workers [default: 1]
-
-        --wordlist <wordlist>
-            the file containing the wordlist for discovery [default: ./wordlists/wordlist.txt]
 ```
 
 ## Flags
@@ -115,7 +112,6 @@ OPTIONS:
 | ----------------- | ------------------------------------------------------------------ |
 | --urls | the file containing the urls to test make sure it contains a path
 | --payloads | file containing the payloads to test |
-| --wordlist |  file containing the technology wordlist |
 | --match-status |  status code used to match internal responses |
 | --filter-body-size |  used to filter the response body like ffuf  |
 | --filter-status |  used to filter the response status code like ffuf  |
@@ -134,7 +130,7 @@ OPTIONS:
 Usage:
 
 ```rust
-$ pathbuster --urls crawls.txt --payloads traversals.txt --wordlist raft-medium-directories.txt -o output.txt
+$ pathbuster --urls crawls.txt --payloads traversals.txt -o output.txt
 ```
 
 ![Screenshot](static/example.png)
