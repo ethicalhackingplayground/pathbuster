@@ -68,7 +68,7 @@ impl PayloadFilter {
         }
         if server_map.get(&2).unwrap().contains(&server) {
             // Nginx filtering
-            invalid = self.payload.contains("%00") || self.payload.contains("%");
+            invalid = self.payload.contains("%00");
             proxy.push_str(server_map.get(&2).unwrap());
             reason.push_str("doesn't allow %00, 0x00, % in path");
         }
@@ -102,7 +102,7 @@ fn print_banner() {
   / /_/ / /_/ / /_/ / / / /_/ / /_/ (__  ) /_/  __/ /    
  / .___/\__,_/\__/_/ /_/_.___/\__,_/____/\__/\___/_/     
 /_/                                                          
-                                v0.3.2                            
+                                v0.3.3                            
     "#;
     write!(&mut rainbowcoat::stdout(), "{}", BANNER).unwrap();
     println!(
@@ -141,7 +141,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     // parse the cli arguments
     let matches = App::new("pathbuster")
-        .version("0.3.2")
+        .version("0.3.3")
         .author("Blake Jacobs <blake@cyberlix.io")
         .about("path-normalization pentesting tool")
         .arg(
