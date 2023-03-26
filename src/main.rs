@@ -33,6 +33,8 @@ use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 struct JobSettings {
     match_status: String,
     drop_after_fail: String,
+    filter_body_size: String,
+    filter_status: String,
     verbose: bool,
 }
 
@@ -102,7 +104,7 @@ fn print_banner() {
   / /_/ / /_/ / /_/ / / / /_/ / /_/ (__  ) /_/  __/ /    
  / .___/\__,_/\__/_/ /_/_.___/\__,_/____/\__/\___/_/     
 /_/                                                          
-                                v0.3.3                            
+                                v0.3.4                          
     "#;
     write!(&mut rainbowcoat::stdout(), "{}", BANNER).unwrap();
     println!(
@@ -141,7 +143,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     // parse the cli arguments
     let matches = App::new("pathbuster")
-        .version("0.3.3")
+        .version("0.3.4")
         .author("Blake Jacobs <blake@cyberlix.io")
         .about("path-normalization pentesting tool")
         .arg(
@@ -186,7 +188,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             Arg::with_name("filter-status")
                 .long("filter-status")
                 .takes_value(true)
-                .default_value("404,403,401,302,301,500,303,501,502")
+                .default_value("403")
                 .required(false),
         )
         .arg(
@@ -302,7 +304,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         Some(filter_body_size) => filter_body_size,
         None => "".to_string(),
     };
-    let _filter_body_size = filter_body_size.clone();
     let filter_status = match matches
         .get_one::<String>("filter-status")
         .map(|s| s.to_string())
@@ -310,16 +311,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         Some(filter_status) => filter_status,
         None => "".to_string(),
     };
-    let _filter_status = filter_status.clone();
 
-    let timeout = match matches
-        .get_one::<String>("timeout")
-        .map(|s| s.to_string())
-    {
+    let timeout = match matches.get_one::<String>("timeout").map(|s| s.to_string()) {
         Some(timeout) => timeout.parse::<usize>().unwrap(),
         None => 10,
     };
-
 
     let verbose = match matches.value_of("verbose").unwrap().parse::<bool>() {
         Ok(verbose) => verbose,
@@ -431,6 +427,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             match_status,
             drop_after_fail,
             verbose,
+            filter_body_size,
+            filter_status,
         )
         .await
     });
@@ -446,7 +444,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         let rx = job_rx.clone();
         let tx: mpsc::Sender<JobResult> = result_tx.clone();
         let pb = pb.clone();
-        workers.push(task::spawn(async move { run_tester(pb, rx, tx, timeout).await }));
+        workers.push(task::spawn(
+            async move { run_tester(pb, rx, tx, timeout).await },
+        ));
     }
 
     // print the results
@@ -480,6 +480,8 @@ async fn send_url(
     match_status: String,
     drop_after_fail: String,
     verbose: bool,
+    filter_body_size: String,
+    filter_status: String,
 ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     //set rate limit
     let lim = RateLimiter::direct(Quota::per_second(std::num::NonZeroU32::new(rate).unwrap()));
@@ -489,6 +491,8 @@ async fn send_url(
         match_status: match_status.to_string(),
         drop_after_fail: drop_after_fail,
         verbose: verbose,
+        filter_body_size: filter_body_size,
+        filter_status: filter_status,
     };
 
     // start the scan
@@ -509,7 +513,12 @@ async fn send_url(
 }
 
 // this function will test for path normalization vulnerabilities
-async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<JobResult>, timeout:usize) {
+async fn run_tester(
+    pb: ProgressBar,
+    rx: spmc::Receiver<Job>,
+    tx: mpsc::Sender<JobResult>,
+    timeout: usize,
+) {
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert(
         reqwest::header::USER_AGENT,
@@ -541,7 +550,7 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
             Ok(url) => url,
             Err(_) => {
                 continue;
-            },
+            }
         };
 
         let schema = url.scheme().to_string();
@@ -556,7 +565,7 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
         job_url.push_str(&host);
         job_url.push_str(&path);
 
-        let path_cnt = path.split("/").count() + 3;
+        let path_cnt = path.split("/").count() + 5;
         let mut payload = String::from(job_payload);
         let new_url = String::from(&job_url);
         let mut track_status_codes = 0;
@@ -587,15 +596,26 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
                 Ok(req) => req,
                 Err(_) => {
                     continue;
-                },
+                }
             };
 
             let resp = match client.execute(req).await {
                 Ok(resp) => resp,
                 Err(_) => {
                     continue;
-                },
+                }
             };
+
+            let content_length = match resp.content_length() {
+                Some(content_length) => content_length.to_string(),
+                None => "".to_string(),
+            };
+
+            if job_settings.filter_body_size.contains(&content_length)
+                || job_settings.filter_status.contains(resp.status().as_str())
+            {
+                continue;
+            }
 
             // fetch the server from the headers
             let server = match resp.headers().get("Server") {
@@ -637,30 +657,28 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
                         Ok(request) => request,
                         Err(_) => {
                             continue;
-                        },
+                        }
                     };
                     let response = match client.execute(request).await {
                         Ok(response) => response,
                         Err(_) => {
                             continue;
-                        },
+                        }
                     };
-
 
                     let get = client.get(backonemore);
                     let request = match get.build() {
                         Ok(request) => request,
                         Err(_) => {
                             continue;
-                        },
+                        }
                     };
                     let response_title = match client.execute(request).await {
                         Ok(response_title) => response_title,
                         Err(_) => {
                             continue;
-                        },
+                        }
                     };
-
 
                     // we git the internal doc root.
                     if (response.status().as_str() == "404" || response.status().as_str() == "500")
@@ -710,7 +728,7 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
 
                         if response.status().is_client_error() {
                             pb.println(format!(
-                                "{}{}{} {}{}{}\n {} {}{}{}\n\t {}{}{} {}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t",
+                                "{}{}{} {}{}{}\n{}{}{} {}\n\t {}{}{} {}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t",
                                 "[".bold().white(),
                                 "OK".bold().green(),
                                 "]".bold().white(),
@@ -729,7 +747,7 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
                                 "[".bold().white(),
                                 response.status().as_str().bold().blue(),
                                 "]".bold().white(),
-                                "content_legnth:".bold().white(),
+                                "content_length:".bold().white(),
                                 "[".bold().white(),
                                 content_length.yellow(),
                                 "]".bold().white(),
@@ -746,7 +764,7 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
 
                         if response.status().is_success() {
                             pb.println(format!(
-                                "{}{}{} {}{}{}\n {} {}{}{}\n\t {}{}{} {}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t",
+                                "{}{}{} {}{}{}\n{}{}{} {}\n\t {}{}{} {}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t",
                                 "[".bold().white(),
                                 "OK".bold().green(),
                                 "]".bold().white(),
@@ -765,7 +783,7 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
                                 "[".bold().white(),
                                 response.status().as_str().bold().green(),
                                 "]".bold().white(),
-                                "content_legnth:".bold().white(),
+                                "content_length:".bold().white(),
                                 "[".bold().white(),
                                 content_length.yellow(),
                                 "]".bold().white(),
@@ -782,7 +800,7 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
 
                         if response.status().is_redirection() {
                             pb.println(format!(
-                                "{}{}{} {}{}{}\n {} {}{}{}\n\t {}{}{} {}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t",
+                                "{}{}{} {}{}{}\n{}{}{} {}\n\t {}{}{} {}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t",
                                 "[".bold().white(),
                                 "OK".bold().green(),
                                 "]".bold().white(),
@@ -801,7 +819,7 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
                                 "[".bold().white(),
                                 response.status().as_str().bold().blue(),
                                 "]".bold().white(),
-                                "content_legnth:".bold().white(),
+                                "content_length:".bold().white(),
                                 "[".bold().white(),
                                 content_length.yellow(),
                                 "]".bold().white(),
@@ -818,7 +836,7 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
 
                         if response.status().is_server_error() {
                             pb.println(format!(
-                                "{}{}{} {}{}{}\n {} {}{}{}\n\t {}{}{} {}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t",
+                                "{}{}{} {}{}{}\n{}{}{} {}\n\t {}{}{} {}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t",
                                 "[".bold().white(),
                                 "OK".bold().green(),
                                 "]".bold().white(),
@@ -837,7 +855,7 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
                                 "[".bold().white(),
                                 response.status().as_str().bold().red(),
                                 "]".bold().white(),
-                                "content_legnth:".bold().white(),
+                                "content_length:".bold().white(),
                                 "[".bold().white(),
                                 content_length.yellow(),
                                 "]".bold().white(),
@@ -854,7 +872,7 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
 
                         if response.status().is_informational() {
                             pb.println(format!(
-                                "{}{}{} {}{}{}\n {} {}{}{}\n\t {}{}{} {}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t",
+                                "{}{}{} {}{}{}\n{}{}{} {}\n\t {}{}{} {}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t",
                                 "[".bold().white(),
                                 "OK".bold().green(),
                                 "]".bold().white(),
@@ -873,7 +891,7 @@ async fn run_tester(pb: ProgressBar, rx: spmc::Receiver<Job>, tx: mpsc::Sender<J
                                 "[".bold().white(),
                                 response.status().as_str().bold().purple(),
                                 "]".bold().white(),
-                                "content_legnth:".bold().white(),
+                                "content_length:".bold().white(),
                                 "[".bold().white(),
                                 content_length.yellow(),
                                 "]".bold().white(),
