@@ -114,7 +114,7 @@ fn print_banner() {
   / /_/ / /_/ / /_/ / / / /_/ / /_/ (__  ) /_/  __/ /    
  / .___/\__,_/\__/_/ /_/_.___/\__,_/____/\__/\___/_/     
 /_/                                                          
-                     v0.3.5
+                     v0.3.6
                      ------
         path normalization pentesting tool                       
     "#;
@@ -155,7 +155,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     // parse the cli arguments
     let matches = App::new("pathbuster")
-        .version("0.3.5")
+        .version("0.3.6")
         .author("Blake Jacobs <blake@cyberlix.io")
         .about("path-normalization pentesting tool")
         .arg(
@@ -700,8 +700,8 @@ async fn run_bruteforcer(
 
         let distance_between_responses = levenshtein(&public_resp_text, &internal_resp_text);
 
-        if distance_between_responses > 0 && resp.status() != StatusCode::BAD_REQUEST
-            || resp.status() != StatusCode::NOT_FOUND
+        if distance_between_responses > 0 && (resp.status() != StatusCode::BAD_REQUEST
+            || resp.status() != StatusCode::NOT_FOUND)
         {
             pb.println(format!(
                 "{} {}",
