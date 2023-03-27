@@ -134,7 +134,7 @@ Usage:
 $ pathbuster --urls crawls.txt --payloads traversals.txt -o output.txt
 ```
 
-![Screenshot](static/example.png)
+[![asciicast](https://asciinema.org/a/UByv5LMcC5sXkFDHybjWEbF26.svg)](https://asciinema.org/a/UByv5LMcC5sXkFDHybjWEbF26)
 
 
 ## Contributing
