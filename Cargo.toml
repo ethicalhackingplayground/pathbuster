@@ -21,6 +21,7 @@ spmc = "0.3.0"
 clap =  { version = "^3.0.0-beta.2" }
 reqwest = { version = "0.11.14", features = ["native-tls", "blocking"] }
 rainbowcoat = "0.1.0"
+levenshtein = "1.0.5"
 regex = "1.7.3"
 
 [dependencies.uuid]

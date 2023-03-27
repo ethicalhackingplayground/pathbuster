@@ -73,7 +73,7 @@ OPTIONS:
             [default: 0]
 
         --filter-status <filter-status>
-            [default: 404,403,401,302,301,500,303,501,502]
+            [default: 403]
 
     -h, --help
             Print help information
@@ -96,14 +96,15 @@ OPTIONS:
     -u, --urls <urls>
             the url you would like to test
 
-    -v, --verbose <verbose>
-            The amount of workers [default: false]
-
     -V, --version
             Print version information
 
     -w, --workers <workers>
             The amount of workers [default: 1]
+
+        --wordlist <wordlist>
+            the file containing the wordlist used for directory bruteforcing [default:
+            ./wordlists/wordlist.txt]
 ```
 
 ## Flags
@@ -120,7 +121,7 @@ OPTIONS:
 | --workers | number of workers to process the jobs |
 | --timeout | the delay between each request |
 | --concurrency | number of threads to be used for processing |
-| --verbose | prints everything |
+| --wordlist | the wordlist used for directory bruteforcing |
 | --out | save output to a file |
 | --help | prints help information |
 | --version | prints version information |

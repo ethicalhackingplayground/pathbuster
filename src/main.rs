@@ -6,6 +6,8 @@ use std::time::Duration;
 
 use regex::Regex;
 
+use levenshtein::levenshtein;
+
 use clap::App;
 use clap::Arg;
 
@@ -15,6 +17,7 @@ use governor::Quota;
 use governor::RateLimiter;
 
 use reqwest::redirect;
+use reqwest::StatusCode;
 
 use tokio::fs::OpenOptions;
 use tokio::io::AsyncWriteExt;
@@ -35,7 +38,6 @@ struct JobSettings {
     drop_after_fail: String,
     filter_body_size: String,
     filter_status: String,
-    verbose: bool,
 }
 
 // the Job struct which will be used to send to the workers
@@ -46,6 +48,25 @@ struct Job {
     payload: Option<String>,
 }
 
+// the JobResult struct which contains the data to be saved to a file
+#[derive(Clone, Debug)]
+pub struct JobResult {
+    data: String,
+}
+
+// the BruteResult struct which contains the data to be saved to a file
+#[derive(Clone, Debug)]
+pub struct BruteResult {
+    data: String,
+}
+
+// the Job struct which will be used for directory bruteforcing
+#[derive(Clone, Debug)]
+struct BruteJob {
+    url: Option<String>,
+    word: Option<String>,
+}
+
 // the PayloadFilter will be used to filter out the payloads
 #[derive(Clone, Debug)]
 struct PayloadFilter {
@@ -53,7 +74,7 @@ struct PayloadFilter {
 }
 
 impl PayloadFilter {
-    fn is_valid_payload(self: &Self, server: String) -> (String, String, bool) {
+    fn is_valid_payload(self: &Self, server: String) -> (String, bool) {
         /* perform basic payload filtering */
         let mut server_map = HashMap::new();
         server_map.insert(1, "Apache");
@@ -61,39 +82,28 @@ impl PayloadFilter {
         server_map.insert(3, "Stackpath");
         let mut proxy = String::from("");
         let mut invalid = false;
-        let mut reason = String::from("");
         if server_map.get(&1).unwrap().contains(&server) {
             // Apache filtering
             invalid = self.payload.contains("%2f") || self.payload.contains("%");
             proxy.push_str(server_map.get(&1).unwrap());
-            reason.push_str("doesn't allow #, %, %00 in path, %2f is treated as a 404");
         }
         if server_map.get(&2).unwrap().contains(&server) {
             // Nginx filtering
             invalid = self.payload.contains("%00");
             proxy.push_str(server_map.get(&2).unwrap());
-            reason.push_str("doesn't allow %00, 0x00, % in path");
         }
         if server_map.get(&3).unwrap().contains(&server) {
             // Stackpath filtering
             invalid =
                 self.payload == "%2f%2e%2e%2f" || self.payload == "../" || self.payload == "%";
             proxy.push_str(server_map.get(&3).unwrap());
-            reason.push_str("doesn't allow %00, 0x00, % and space in the path ");
-            reason.push_str("doesn't allow /../ or %2f%2e%2e%2f (403, WAF)")
         }
         if server.is_empty() {
             // Proxy Unknown filtering
             invalid = false;
         }
-        return (proxy, reason, invalid);
+        return (proxy, invalid);
     }
-}
-
-// the JobResult struct which contains the data to be saved to a file
-#[derive(Clone, Debug)]
-pub struct JobResult {
-    data: String,
 }
 
 fn print_banner() {
@@ -104,7 +114,9 @@ fn print_banner() {
   / /_/ / /_/ / /_/ / / / /_/ / /_/ (__  ) /_/  __/ /    
  / .___/\__,_/\__/_/ /_/_.___/\__,_/____/\__/\___/_/     
 /_/                                                          
-                                v0.3.4                          
+                     v0.3.5
+                     ------
+        path normalization pentesting tool                       
     "#;
     write!(&mut rainbowcoat::stdout(), "{}", BANNER).unwrap();
     println!(
@@ -143,7 +155,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     // parse the cli arguments
     let matches = App::new("pathbuster")
-        .version("0.3.4")
+        .version("0.3.5")
         .author("Blake Jacobs <blake@cyberlix.io")
         .about("path-normalization pentesting tool")
         .arg(
@@ -200,6 +212,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
                 .help("the file containing the traversal payloads"),
         )
         .arg(
+            Arg::with_name("wordlist")
+                .long("wordlist")
+                .required(true)
+                .takes_value(true)
+                .default_value("./wordlists/wordlist.txt")
+                .help("the file containing the wordlist used for directory bruteforcing"),
+        )
+        .arg(
             Arg::with_name("concurrency")
                 .short('c')
                 .long("concurrency")
@@ -218,15 +238,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             Arg::with_name("workers")
                 .short('w')
                 .long("workers")
-                .default_value("1")
+                .default_value("100")
                 .takes_value(true)
-                .help("The amount of workers"),
-        )
-        .arg(
-            Arg::with_name("verbose")
-                .short('v')
-                .long("verbose")
-                .default_value("false")
                 .help("The amount of workers"),
         )
         .arg(
@@ -243,7 +256,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     pb.set_draw_target(ProgressDrawTarget::stderr());
     pb.set_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.green} Scanning  {elapsed} ({len}) {pos} {per_sec}")
+            .template("{spinner:.green} {elapsed} ({len}) {pos} {msg}")
             .unwrap()
             .progress_chars(r#"#>-"#),
     );
@@ -283,6 +296,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         }
     };
 
+    let wordlist_path = match matches.value_of("wordlist") {
+        Some(wordlist_path) => wordlist_path,
+        None => {
+            pb.println("invalid wordlist file");
+            exit(1);
+        }
+    };
     let urls_path = match matches.get_one::<String>("urls").map(|s| s.to_string()) {
         Some(urls_path) => urls_path,
         None => "".to_string(),
@@ -317,11 +337,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         None => 10,
     };
 
-    let verbose = match matches.value_of("verbose").unwrap().parse::<bool>() {
-        Ok(verbose) => verbose,
-        Err(_) => false,
-    };
-
     let outfile_path = match matches.value_of("out") {
         Some(outfile_path) => outfile_path,
         None => {
@@ -347,8 +362,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     let w: usize = match matches.value_of("workers").unwrap().parse::<usize>() {
         Ok(w) => w,
         Err(_) => {
-            pb.println("could not parse workers, using default of 1");
-            1
+            pb.println("could not parse workers, using default of 100");
+            100
         }
     };
 
@@ -370,13 +385,25 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         }
     };
 
+    // define the file handle for the wordlists.
+    let wordlist_handle = match File::open(wordlist_path).await {
+        Ok(wordlist_handle) => wordlist_handle,
+        Err(e) => {
+            pb.println(format!("failed to open input file: {:?}", e));
+            exit(1);
+        }
+    };
+
     // build our wordlists by constructing the arrays and storing
     // the words in the array.
     let (job_tx, job_rx) = spmc::channel::<Job>();
+    let (brute_job_tx, brute_job_rx) = spmc::channel::<BruteJob>();
     let (result_tx, result_rx) = mpsc::channel::<JobResult>(w);
+    let (brute_result_tx, brute_result_rx) = mpsc::channel::<BruteResult>(w);
 
     let mut urls = vec![];
     let mut payloads = vec![];
+    let mut wordlist = vec![];
 
     let payload_buf = BufReader::new(payloads_handle);
     let mut payload_lines = payload_buf.lines();
@@ -384,6 +411,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     // read the payloads file and append each line to an array.
     while let Ok(Some(payload)) = payload_lines.next_line().await {
         payloads.push(payload);
+    }
+
+    let wordlist_buf = BufReader::new(wordlist_handle);
+    let mut wordlist_lines = wordlist_buf.lines();
+
+    // read the payloads file and append each line to an array.
+    while let Ok(Some(word)) = wordlist_lines.next_line().await {
+        wordlist.push(word);
     }
 
     // read the hosts file if specified and append each line to an array.
@@ -418,35 +453,40 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     println!("");
 
     // spawn our workers
+    let out_pb = pb.clone();
+    let job_pb = pb.clone();
     rt.spawn(async move {
         send_url(
+            pb,
             job_tx,
             urls,
             payloads,
             rate,
             match_status,
             drop_after_fail,
-            verbose,
             filter_body_size,
             filter_status,
         )
         .await
     });
-    let out_pb = pb.clone();
-    rt.spawn(async move {
-        // start orchestrator task
-        output(out_pb, outfile_handle, result_rx).await;
-    });
+
+    // start orchestrator tasks
+    rt.spawn(async move { send_word_to_url(result_rx, brute_job_tx, wordlist, rate).await });
+    rt.spawn(async move { output(out_pb, outfile_handle, brute_result_rx).await });
 
     // process the jobs.
     let workers = FuturesUnordered::new();
     for _ in 0..concurrency {
-        let rx = job_rx.clone();
-        let tx: mpsc::Sender<JobResult> = result_tx.clone();
-        let pb = pb.clone();
-        workers.push(task::spawn(
-            async move { run_tester(pb, rx, tx, timeout).await },
-        ));
+        let jrx = job_rx.clone();
+        let jtx: mpsc::Sender<JobResult> = result_tx.clone();
+        let jpb = job_pb.clone();
+        let brx = brute_job_rx.clone();
+        let btx: mpsc::Sender<BruteResult> = brute_result_tx.clone();
+        let bpb = job_pb.clone();
+        workers.push(task::spawn(async move {
+            run_tester(jpb, jrx, jtx, timeout).await;
+            run_bruteforcer(bpb, brx, btx, timeout).await
+        }));
     }
 
     // print the results
@@ -473,13 +513,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
 // this function will send the jobs to the workers
 async fn send_url(
+    pb: ProgressBar,
     mut tx: spmc::Sender<Job>,
     urls: Vec<String>,
     payloads: Vec<String>,
     rate: u32,
     match_status: String,
     drop_after_fail: String,
-    verbose: bool,
     filter_body_size: String,
     filter_status: String,
 ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
@@ -490,7 +530,6 @@ async fn send_url(
     let job_settings = JobSettings {
         match_status: match_status.to_string(),
         drop_after_fail: drop_after_fail,
-        verbose: verbose,
         filter_body_size: filter_body_size,
         filter_status: filter_status,
     };
@@ -499,8 +538,8 @@ async fn send_url(
     for url in urls.iter() {
         for payload in payloads.iter() {
             let msg = Job {
-                url: Some(url.clone()),
                 settings: Some(job_settings.clone()),
+                url: Some(url.clone()),
                 payload: Some(payload.clone()),
             };
             if let Err(_) = tx.send(msg) {
@@ -508,8 +547,178 @@ async fn send_url(
             }
             lim.until_ready().await;
         }
+        pb.inc(1);
     }
     Ok(())
+}
+
+// this function will send the jobs to the workers
+async fn send_word_to_url(
+    mut rx: mpsc::Receiver<JobResult>,
+    mut tx: spmc::Sender<BruteJob>,
+    wordlists: Vec<String>,
+    rate: u32,
+) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+    //set rate limit
+    let lim = RateLimiter::direct(Quota::per_second(std::num::NonZeroU32::new(rate).unwrap()));
+
+    // start the scan
+    while let Some(result) = rx.recv().await {
+        let url = result.data.to_owned();
+        for word in wordlists.iter() {
+            let url_cp = url.clone();
+            let msg = BruteJob {
+                url: Some(url_cp),
+                word: Some(word.clone()),
+            };
+            if let Err(_) = tx.send(msg) {
+                continue;
+            }
+            lim.until_ready().await;
+        }
+    }
+
+    Ok(())
+}
+
+// runs the directory bruteforcer on the job
+async fn run_bruteforcer(
+    pb: ProgressBar,
+    rx: spmc::Receiver<BruteJob>,
+    tx: mpsc::Sender<BruteResult>,
+    timeout: usize,
+) {
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        reqwest::header::USER_AGENT,
+        reqwest::header::HeaderValue::from_static(
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:95.0) Gecko/20100101 Firefox/95.0",
+        ),
+    );
+
+    //no certs
+    let client = reqwest::Client::builder()
+        .default_headers(headers)
+        .redirect(redirect::Policy::none())
+        .timeout(Duration::from_secs(timeout.try_into().unwrap()))
+        .danger_accept_invalid_hostnames(true)
+        .danger_accept_invalid_certs(true)
+        .build()
+        .unwrap();
+
+    while let Ok(job) = rx.recv() {
+        let job_url = job.url.unwrap();
+        let job_word = job.word.unwrap();
+        let job_url_new = job_url.clone();
+
+        let mut web_root_url: String = String::from("");
+        let mut internal_web_root_url: String = String::from(job_url);
+        let url = match reqwest::Url::parse(&job_url_new) {
+            Ok(url) => url,
+            Err(_) => {
+                continue;
+            }
+        };
+
+        let schema = url.scheme().to_string();
+        let host = match url.host_str() {
+            Some(host) => host,
+            None => continue,
+        };
+
+        web_root_url.push_str(&schema);
+        web_root_url.push_str("://");
+        web_root_url.push_str(&host);
+        web_root_url.push_str("/");
+        web_root_url.push_str(&job_word);
+
+        internal_web_root_url.push_str(&job_word);
+        let internal_url = internal_web_root_url.clone();
+        let internal_web_url = internal_url.clone();
+
+        pb.set_message(format!(
+            "{} {}",
+            "directory bruteforcing ::".bold().white(),
+            internal_url.bold().blue(),
+        ));
+
+        let get = client.get(internal_web_url);
+        let internal_get = client.get(internal_web_root_url);
+        let public_get = client.get(job_url_new);
+
+        let public_req = match public_get.build() {
+            Ok(req) => req,
+            Err(_) => {
+                continue;
+            }
+        };
+
+        let internal_req = match internal_get.build() {
+            Ok(req) => req,
+            Err(_) => {
+                continue;
+            }
+        };
+
+        let public_resp = match client.execute(public_req).await {
+            Ok(public_resp) => public_resp,
+            Err(_) => {
+                continue;
+            }
+        };
+
+        let internal_resp = match client.execute(internal_req).await {
+            Ok(internal_resp) => internal_resp,
+            Err(_) => {
+                continue;
+            }
+        };
+
+        let public_resp_text = match public_resp.text().await {
+            Ok(public_resp_text) => public_resp_text,
+            Err(_) => continue,
+        };
+
+        let internal_resp_text = match internal_resp.text().await {
+            Ok(internal_resp_text) => internal_resp_text,
+            Err(_) => continue,
+        };
+
+        let req = match get.build() {
+            Ok(req) => req,
+            Err(_) => {
+                continue;
+            }
+        };
+
+        let resp = match client.execute(req).await {
+            Ok(resp) => resp,
+            Err(_) => {
+                continue;
+            }
+        };
+
+        let distance_between_responses = levenshtein(&public_resp_text, &internal_resp_text);
+
+        if distance_between_responses > 0 && resp.status() != StatusCode::BAD_REQUEST
+            || resp.status() != StatusCode::NOT_FOUND
+        {
+            pb.println(format!(
+                "{} {}",
+                "found something interesting ::".bold().green(),
+                internal_url.bold().blue(),
+            ));
+            pb.inc_length(1);
+        }
+
+        // send the result message through the channel to the workers.
+        let result_msg = BruteResult {
+            data: internal_url.to_owned(),
+        };
+        if let Err(_) = tx.send(result_msg).await {
+            continue;
+        }
+    }
 }
 
 // this function will test for path normalization vulnerabilities
@@ -543,8 +752,6 @@ async fn run_tester(
         let job_settings = job.settings.unwrap();
         let job_payload_new = job_payload.clone();
         let job_url_new = job_url.clone();
-        pb.inc(1);
-
         let mut job_url: String = String::from("");
         let url = match reqwest::Url::parse(&job_url_new) {
             Ok(url) => url,
@@ -579,16 +786,11 @@ async fn run_tester(
 
             let payload_to_filter = payload.clone();
 
-            if job_settings.verbose == true {
-                pb.println(format!(
-                    "{}{}{} {} {}",
-                    "[".bold().white(),
-                    "*".bold().cyan(),
-                    "]".bold().white(),
-                    "Scanning Url ".bold().white(),
-                    new_url.dimmed().blue(),
-                ));
-            }
+            pb.set_message(format!(
+                "{} {}",
+                "scanning ::".bold().white(),
+                new_url.bold().blue(),
+            ));
 
             let new_url2 = new_url.clone();
             let get = client.get(new_url);
@@ -629,7 +831,7 @@ async fn run_tester(
             let payload_filter = PayloadFilter {
                 payload: payload_to_filter,
             };
-            let (proxy, reason, invalid) = payload_filter.is_valid_payload(server.to_string());
+            let (proxy, invalid) = payload_filter.is_valid_payload(server.to_string());
             if !invalid {
                 let content_length = match resp.content_length() {
                     Some(content_length) => content_length.to_string(),
@@ -688,21 +890,15 @@ async fn run_tester(
                         if job_settings.drop_after_fail == response.status().as_str() {
                             track_status_codes += 1;
                             if track_status_codes >= 5 {
-                                if job_settings.verbose == true {
-                                    // set the message
-                                    println!(
-                                        "{}{}{} {} {} {}",
-                                        "[".bold().white(),
-                                        "+".bold().red(),
-                                        "]".bold().white(),
-                                        "skipping".bold().white(),
-                                        result_url.bold().white(),
-                                        "recurring status codes ".bold().white()
-                                    );
-                                }
                                 return;
                             }
                         }
+
+                        pb.println(format!(
+                            "{} {}",
+                            "found internal doc root :: ".bold().green(),
+                            result_url.bold().blue(),
+                        ));
 
                         let mut title = String::from("");
 
@@ -741,7 +937,7 @@ async fn run_tester(
                                 "Details:".bold().white(),
                                 "payload:".bold().white(),
                                 "[".bold().white(),
-                                job_payload_new.as_str().bold().blue(),
+                                job_payload_new.bold().blue(),
                                 "]".bold().white(),
                                 "status:".bold().white(),
                                 "[".bold().white(),
@@ -777,7 +973,7 @@ async fn run_tester(
                                 "Details:".bold().white(),
                                 "payload:".bold().white(),
                                 "[".bold().white(),
-                                job_payload_new.as_str().bold().blue(),
+                                job_payload_new.bold().blue(),
                                 "]".bold().white(),
                                 "status:".bold().white(),
                                 "[".bold().white(),
@@ -813,7 +1009,7 @@ async fn run_tester(
                                 "Details:".bold().white(),
                                 "payload:".bold().white(),
                                 "[".bold().white(),
-                                job_payload_new.as_str().bold().blue(),
+                                job_payload_new.bold().blue(),
                                 "]".bold().white(),
                                 "status:".bold().white(),
                                 "[".bold().white(),
@@ -849,7 +1045,7 @@ async fn run_tester(
                                 "Details:".bold().white(),
                                 "payload:".bold().white(),
                                 "[".bold().white(),
-                                job_payload_new.as_str().bold().blue(),
+                                job_payload_new.bold().blue(),
                                 "]".bold().white(),
                                 "status:".bold().white(),
                                 "[".bold().white(),
@@ -885,7 +1081,7 @@ async fn run_tester(
                                 "Details:".bold().white(),
                                 "payload:".bold().white(),
                                 "[".bold().white(),
-                                job_payload_new.as_str().bold().blue(),
+                                job_payload_new.bold().blue(),
                                 "]".bold().white(),
                                 "status:".bold().white(),
                                 "[".bold().white(),
@@ -913,28 +1109,11 @@ async fn run_tester(
                         if let Err(_) = tx.send(result_msg).await {
                             continue;
                         }
-                        pb.inc_length(1);
                     }
                 }
             } else {
                 if proxy.is_empty() {
-                    return;
-                } else {
-                    if job_settings.verbose == true {
-                        // set the message
-                        pb.println(format!(
-                            "{}{}{} {} {} {} {}\n\t {}: {}",
-                            "[".bold().white(),
-                            "*".bold().red(),
-                            "]".bold().white(),
-                            "skipping payload".bold().white(),
-                            job_payload_new.bold().white(),
-                            "for url".bold().white(),
-                            new_url2.bold().white(),
-                            proxy.bold().white(),
-                            reason.bold().white()
-                        ));
-                    }
+                    continue;
                 }
                 continue;
             }
@@ -944,7 +1123,7 @@ async fn run_tester(
 }
 
 // Saves the output to a file
-async fn output(_: ProgressBar, mut outfile: File, mut rx: mpsc::Receiver<JobResult>) {
+async fn output(_: ProgressBar, mut outfile: File, mut rx: mpsc::Receiver<BruteResult>) {
     while let Some(result) = rx.recv().await {
         let mut outbuf = result.data.as_bytes().to_owned();
         outbuf.extend_from_slice(b"\n");
