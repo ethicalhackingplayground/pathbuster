@@ -436,25 +436,41 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     }
 
     // set the message
+    println!("{}", "----------------------------------------------------------".bold().white());
     println!(
-        "{} {} {}\t{} {} {}  {} {} {}  {} {}",
-        "Payloads:".bold().white(),
+        "{}  {}    {} {}\n{}  {}        {} {}\n{}  {}    {} {}\n{}  {} {} {}\n{}  {}     {} {}\n{}  {}     {} {}",
+        ">".bold().green(),
+        "Payloads".bold().white(),
+        ":".bold().white(),
         payloads.len().to_string().bold().cyan(),
-        ":".bold().green(),
-        "Urls:".bold().white(),
+        ">".bold().green(),
+        "Urls".bold().white(),
+        ":".bold().white(),
         urls.len().to_string().bold().cyan(),
-        ":".bold().green(),
-        "Matchers:".bold().white(),
+        ">".bold().green(),
+        "Matchers".bold().white(),
+        ":".bold().white(),
         match_status.to_string().bold().cyan(),
-        ":".bold().green(),
-        "Concurrency:".bold().white(),
+        ">".bold().green(),
+        "Concurrency".bold().white(),
+        ":".bold().white(),
         concurrency.to_string().bold().cyan(),
+        ">".bold().green(),
+        "Workers".bold().white(),
+        ":".bold().white(),
+        w.to_string().bold().cyan(),
+        ">".bold().green(),
+        "Filters".bold().white(),
+        ":".bold().white(),
+        filter_status.to_string().bold().cyan(),
     );
+    println!("{}", "----------------------------------------------------------".bold().white());
     println!("");
 
     // spawn our workers
     let out_pb = pb.clone();
     let job_pb = pb.clone();
+    let brute_pb = job_pb.clone();
     rt.spawn(async move {
         send_url(
             pb,
@@ -471,7 +487,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     });
 
     // start orchestrator tasks
-    rt.spawn(async move { send_word_to_url(result_rx, brute_job_tx, wordlist, rate).await });
+    rt.spawn(async move { send_word_to_url(brute_pb, result_rx, brute_job_tx, wordlist, rate).await });
     rt.spawn(async move { output(out_pb, outfile_handle, brute_result_rx).await });
 
     // process the jobs.
@@ -554,6 +570,7 @@ async fn send_url(
 
 // this function will send the jobs to the workers
 async fn send_word_to_url(
+    pb: ProgressBar,
     mut rx: mpsc::Receiver<JobResult>,
     mut tx: spmc::Sender<BruteJob>,
     wordlists: Vec<String>,
@@ -565,6 +582,17 @@ async fn send_word_to_url(
     // start the scan
     while let Some(result) = rx.recv().await {
         let url = result.data.to_owned();
+        let progressbar_len_str = match pb.length() {
+            Some(progressbar_len) => progressbar_len.to_string(),
+            None => continue,
+        };
+
+        let progressbar_len = match progressbar_len_str.parse::<usize>() {
+            Ok(progressbar_len) => progressbar_len,
+            Err(_) => continue,
+        };
+        let new_len = progressbar_len + wordlists.len();
+        pb.set_length(new_len.try_into().unwrap());
         for word in wordlists.iter() {
             let url_cp = url.clone();
             let msg = BruteJob {
@@ -644,7 +672,7 @@ async fn run_bruteforcer(
 
         let get = client.get(internal_web_url);
         let internal_get = client.get(internal_web_root_url);
-        let public_get = client.get(job_url_new);
+        let public_get = client.get(web_root_url);
 
         let public_req = match public_get.build() {
             Ok(req) => req,

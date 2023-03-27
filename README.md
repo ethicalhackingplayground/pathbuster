@@ -131,7 +131,7 @@ OPTIONS:
 Usage:
 
 ```rust
-$ pathbuster --urls crawls.txt --payloads traversals.txt -o output.txt
+$ pathbuster --urls crawls.txt --payloads traversals.txt --wordlist wordlist.txt -o output.txt
 ```
 
 [![asciicast](https://asciinema.org/a/UByv5LMcC5sXkFDHybjWEbF26.svg)](https://asciinema.org/a/UByv5LMcC5sXkFDHybjWEbF26)
