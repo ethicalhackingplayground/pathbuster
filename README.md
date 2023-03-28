@@ -33,6 +33,7 @@
 - [x] Implement **--filter-status** which will filter the status codes.
 - [x] Implement **--filter-body-size** which will filter the response sizes.
 - [x] Implement **--drop-after-fail** which will ignore requests with the same response code multiple times in a row.
+- [x] Fixed a ton performance issues and included directory bruteforcing at the end.
 ---
 
 ## Installation
@@ -134,7 +135,7 @@ Usage:
 $ pathbuster --urls crawls.txt --payloads traversals.txt --wordlist wordlist.txt -o output.txt
 ```
 
-[![asciicast](https://asciinema.org/a/UByv5LMcC5sXkFDHybjWEbF26.svg)](https://asciinema.org/a/UByv5LMcC5sXkFDHybjWEbF26)
+[![asciicast](https://asciinema.org/a/vvCN13ZIbfVGHGsLP5KKgYzl4.svg)](https://asciinema.org/a/vvCN13ZIbfVGHGsLP5KKgYzl4)
 
 
 ## Contributing
