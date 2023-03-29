@@ -70,12 +70,6 @@ OPTIONS:
         --drop-after-fail <drop-after-fail>
             ignore requests with the same response code multiple times in a row [default: 302,301]
 
-        --filter-body-size <filter-body-size>
-            [default: 0]
-
-        --filter-status <filter-status>
-            [default: 403]
-
     -h, --help
             Print help information
 
@@ -115,8 +109,6 @@ OPTIONS:
 | --urls | the file containing the urls to test make sure it contains a path
 | --payloads | file containing the payloads to test |
 | --match-status |  status code used to match internal responses |
-| --filter-body-size |  used to filter the response body like ffuf  |
-| --filter-status |  used to filter the response status code like ffuf  |
 | --drop-after-fail |  specify a status code to ignore if it reoccurs more than 5 times in a row  |
 | --rate | used set the maximum in-flight requests per second |
 | --workers | number of workers to process the jobs |
