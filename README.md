@@ -127,7 +127,7 @@ Usage:
 $ pathbuster --urls crawls.txt --payloads traversals.txt --wordlist wordlist.txt -o output.txt
 ```
 
-![Screenshot](screenshots/example.png)
+![Screenshot](screenshots/screenshot.png)
 
 
 If you find any cool bugs, it would be nice if I have some sorta appreciation such as shouting me out on your Twitter, buying me a coffee or donating to my Paypal.
