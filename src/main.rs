@@ -1,11 +1,14 @@
 use std::error::Error;
 use std::io::Write;
+use std::iter::Iterator;
 use std::process::exit;
 use std::time::Duration;
 
+use differ::{Differ, Tag};
+
 use regex::Regex;
 
-use levenshtein::levenshtein;
+use distance::sift3;
 
 use clap::App;
 use clap::Arg;
@@ -63,6 +66,15 @@ struct BruteJob {
     word: Option<String>,
 }
 
+struct Threshold {
+    threshold_start: f32,
+    threshold_end: f32,
+}
+const CHANGE: Threshold = Threshold {
+    threshold_start: 50.0,
+    threshold_end: 50000.0,
+};
+
 fn print_banner() {
     const BANNER: &str = r#"                             
                  __  __    __               __           
@@ -71,7 +83,7 @@ fn print_banner() {
   / /_/ / /_/ / /_/ / / / /_/ / /_/ (__  ) /_/  __/ /    
  / .___/\__,_/\__/_/ /_/_.___/\__,_/____/\__/\___/_/     
 /_/                                                          
-                     v0.3.9
+                     v0.4.0
                      ------
         path normalization pentesting tool                       
     "#;
@@ -112,7 +124,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     // parse the cli arguments
     let matches = App::new("pathbuster")
-        .version("0.3.9")
+        .version("0.4.0")
         .author("Blake Jacobs <krypt0mux@gmail.com>")
         .about("path-normalization pentesting tool")
         .arg(
@@ -417,6 +429,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     let brute_wordlist = wordlist.clone();
     let worker_results: Vec<_> = workers.collect().await;
     let mut results: Vec<String> = vec![];
+    let mut brute_results: Vec<String> = vec![];
     for result in worker_results {
         let result = match result {
             Ok(result) => result,
@@ -484,17 +497,23 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
                 Ok(result) => result,
                 Err(_) => continue,
             };
+            let result_data = result.data.clone();
             if result.data.is_empty() == false {
-                println!(
-                    "{} {}",
-                    "discovered ::".bold().green(),
-                    result.data.bold().white()
-                );
+                brute_results.push(result_data);
             }
         }
     }
 
     rt.shutdown_background();
+
+    // print out the discoveries.
+    for result in brute_results {
+        println!(
+            "{} {}",
+            "discovered ::".bold().green(),
+            result.bold().white()
+        );
+    }
 
     let elapsed_time = now.elapsed();
 
@@ -512,6 +531,15 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     );
 
     Ok(())
+}
+
+// find the different characters between two strings
+fn str_change_percent(a: &str, b: &str) -> (bool, f32) {
+    let s = sift3(a, b);
+    if s > CHANGE.threshold_start && s < CHANGE.threshold_end {
+        return (true, s);
+    }
+    return (false, 0.0);
 }
 
 // this function will send the jobs to the workers
@@ -669,14 +697,14 @@ async fn run_bruteforcer(
             }
         };
 
-        let public_cl = match public_resp.content_length() {
-            Some(public_cl) => public_cl.to_string(),
-            None => continue,
+        let public_resp_text = match public_resp.text().await {
+            Ok(public_cl) => public_cl,
+            Err(_) => continue,
         };
 
-        let internal_cl = match internal_resp.content_length() {
-            Some(internal_cl) => internal_cl.to_string(),
-            None => continue,
+        let internal_resp_text = match internal_resp.text().await {
+            Ok(internal_cl) => internal_cl,
+            Err(_) => continue,
         };
 
         let req = match get.build() {
@@ -693,11 +721,44 @@ async fn run_bruteforcer(
             }
         };
 
-        let distance_between_responses = levenshtein(&internal_cl, &public_cl);
-        if distance_between_responses > 2
-            && resp.status().as_str() != "404"
-            && resp.status().as_str() != "400"
-        {
+        let (ok, distance_between_responses) =
+            str_change_percent(&internal_resp_text, &public_resp_text);
+        if ok && resp.status().as_str() != "404" && resp.status().as_str() != "400" {
+            let internal_resp_text_lines = internal_resp_text.lines().collect::<Vec<_>>();
+            let public_resp_text_lines = public_resp_text.lines().collect::<Vec<_>>();
+            let character_differences =
+                Differ::new(&internal_resp_text_lines, &public_resp_text_lines);
+            pb.println(format!(
+                "\n{}{}{} {}",
+                "(".bold().white(),
+                "*".bold().blue(),
+                ")".bold().white(),
+                "found some response changes:".bold().green(),
+            ));
+            for span in character_differences.spans() {
+                match span.tag {
+                    Tag::Equal => (),  // ignore
+                    Tag::Insert => (), // ignore
+                    Tag::Delete => (), // ignore
+                    Tag::Replace => {
+                        let mut i = 0;
+                        for line in &internal_resp_text_lines[span.b_start..span.b_end] {
+                            i = i + 1;
+                            if i < 100 {
+                                if line.to_string() == "" {
+                                    pb.println(format!("\n{}", line.bold().white(),));
+                                } else {
+                                    pb.println(format!("{}", line.bold().white(),));
+                                }
+                            } else {
+                                pb.println(format!("\n{}\n", "...".bold().white(),));
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            pb.println(format!("\n"));
             pb.println(format!(
                 "{} {}{}{} {} {}",
                 "found something interesting".bold().green(),
@@ -826,15 +887,6 @@ async fn run_tester(
                 }
             };
 
-            // let content_length = match resp.content_length() {
-            //     Some(content_length) => content_length.to_string(),
-            //     None => "".to_string(),
-            // };
-            // if job_settings.filter_body_size.contains(&content_length)
-            //     || job_settings.filter_status.contains(resp.status().as_str())
-            // {
-            //     continue;
-            // }
             let content_length = match resp.content_length() {
                 Some(content_length) => content_length.to_string(),
                 None => { "" }.to_owned(),
@@ -903,9 +955,9 @@ async fn run_tester(
                 };
 
                 // we hit the internal doc root.
-                let distance_between_responses = levenshtein(&internal_cl, &public_cl);
+                let (ok, distance_between_responses) = str_change_percent(&internal_cl, &public_cl);
                 if response.status().as_str() != "400"
-                    && distance_between_responses > 2
+                    && ok
                     && result_url.contains(&job_payload_new)
                 {
                     // track the status codes
@@ -939,6 +991,42 @@ async fn run_tester(
                         },
                         None => "Unknown",
                     };
+
+                    let internal_resp_text_lines = internal_cl.lines().collect::<Vec<_>>();
+                    let public_resp_text_lines = public_cl.lines().collect::<Vec<_>>();
+                    let character_differences =
+                        Differ::new(&public_resp_text_lines, &internal_resp_text_lines);
+                    pb.println(format!(
+                        "\n{}{}{} {}",
+                        "(".bold().white(),
+                        "*".bold().blue(),
+                        ")".bold().white(),
+                        "found some response changes:".bold().green(),
+                    ));
+                    for span in character_differences.spans() {
+                        match span.tag {
+                            Tag::Equal => (),  // ignore
+                            Tag::Insert => (), // ignore
+                            Tag::Delete => (), // ignore
+                            Tag::Replace => {
+                                let mut i = 0;
+                                for line in &internal_resp_text_lines[span.b_start..span.b_end] {
+                                    i = i + 1;
+                                    if i < 100 {
+                                        if line.to_string() == "" {
+                                            pb.println(format!("\n{}", line.bold().white(),));
+                                        } else {
+                                            pb.println(format!("{}", line.bold().white(),));
+                                        }
+                                    } else {
+                                        pb.println(format!("\n{}", "...".bold().white(),));
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    pb.println(format!("\n"));
                     if response.status().is_client_error() {
                         pb.println(format!(
                             "{}{}{} {}{}{}\n{}{}{} {}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t",
