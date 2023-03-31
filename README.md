@@ -30,10 +30,10 @@
 
 ### What's New?
 
-- [x] Removed redudant **--filter-status** which filtered the status codes but also missed a ton of valid findings.
+- [x] Removed redundant **--filter-status** which filtered the status codes but also missed a ton of valid findings.
 - [x] Implement **--filter-body-size** which filtered the response sizes but also missed a ton of valid findings.
 - [x] Implement **--drop-after-fail** which will ignore requests with the same response code multiple times in a row.
-- [x] Fixed a ton performance issues and included directory bruteforcing at the end.
+- [x] Fixed a ton of performance issues and included directory bruteforcing at the end.
 - [x] Massive performance and accuracy increases using itertools instead of double for loops reducing O(n^2) time complexity.
 ---
 
