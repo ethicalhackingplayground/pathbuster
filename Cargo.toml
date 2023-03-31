@@ -2,7 +2,7 @@
 name = "pathbuster"
 authors = ["zoid", "<krypt0mux@gmail.com>"]
 description = "A path-normalization pentesting tool."
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/ethicalhackingplayground/pathbuster"
@@ -12,6 +12,7 @@ repository = "https://github.com/ethicalhackingplayground/pathbuster"
 
 [dependencies]
 governor = "0.5.1"
+itertools = "0.10.5"
 futures = "0.3.26"
 futures-util = "0.3.26"
 tokio = { version = "^1.2.0", features = ["full"] }

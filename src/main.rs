@@ -4,8 +4,10 @@ use std::iter::Iterator;
 use std::process::exit;
 use std::time::Duration;
 
+use itertools;
 use differ::{Differ, Tag};
 
+use itertools::iproduct;
 use regex::Regex;
 
 use distance::sift3;
@@ -83,7 +85,7 @@ fn print_banner() {
   / /_/ / /_/ / /_/ / / / /_/ / /_/ (__  ) /_/  __/ /    
  / .___/\__,_/\__/_/ /_/_.___/\__,_/____/\__/\___/_/     
 /_/                                                          
-                     v0.4.0
+                     v0.4.1
                      ------
         path normalization pentesting tool                       
     "#;
@@ -124,7 +126,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     // parse the cli arguments
     let matches = App::new("pathbuster")
-        .version("0.4.0")
+        .version("0.4.1")
         .author("Blake Jacobs <krypt0mux@gmail.com>")
         .about("path-normalization pentesting tool")
         .arg(
@@ -456,51 +458,49 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             save_traversals(out_pb, outfile_handle_traversal, out_data).await;
         }
     }
-    for result in results {
-        let outfile_path_brute = outfile_path_brute.clone();
-        let outfile_handle_brute = match OpenOptions::new()
-            .create(true)
-            .write(true)
-            .append(true)
-            .open(outfile_path_brute)
-            .await
-        {
-            Ok(outfile_handle_brute) => outfile_handle_brute,
-            Err(e) => {
-                println!("failed to open output file: {:?}", e);
-                exit(1);
-            }
-        };
-        let out_pb = out_pb.clone();
-        out_pb.set_length(0);
-        let brute_wordlist = brute_wordlist.clone();
-        let (brute_job_tx, brute_job_rx) = spmc::channel::<BruteJob>();
-        let (brute_result_tx, brute_result_rx) = mpsc::channel::<BruteResult>(w);
-        // start orchestrator tasks
-        rt.spawn(async move { send_word_to_url(brute_job_tx, result, brute_wordlist, rate).await });
-        rt.spawn(
-            async move { save_discoveries(out_pb, outfile_handle_brute, brute_result_rx).await },
-        );
-        // process the jobs for directory bruteforcing.
-        let workers = FuturesUnordered::new();
-        for _ in 0..concurrency {
-            let brx = brute_job_rx.clone();
-            let btx: mpsc::Sender<BruteResult> = brute_result_tx.clone();
-            let bpb = job_pb.clone();
-            workers.push(task::spawn(async move {
-                run_bruteforcer(bpb, brx, btx, timeout).await
-            }));
+    let outfile_path_brute = outfile_path_brute.clone();
+    let outfile_handle_brute = match OpenOptions::new()
+        .create(true)
+        .write(true)
+        .append(true)
+        .open(outfile_path_brute)
+        .await
+    {
+        Ok(outfile_handle_brute) => outfile_handle_brute,
+        Err(e) => {
+            println!("failed to open output file: {:?}", e);
+            exit(1);
         }
-        let worker_results: Vec<_> = workers.collect().await;
-        for result in worker_results {
-            let result = match result {
-                Ok(result) => result,
-                Err(_) => continue,
-            };
-            let result_data = result.data.clone();
-            if result.data.is_empty() == false {
-                brute_results.push(result_data);
-            }
+    };
+    let out_pb = out_pb.clone();
+    out_pb.set_length(0);
+    let brute_wordlist = brute_wordlist.clone();
+    let (brute_job_tx, brute_job_rx) = spmc::channel::<BruteJob>();
+    let (brute_result_tx, brute_result_rx) = mpsc::channel::<BruteResult>(w);
+    // start orchestrator tasks
+    rt.spawn(async move { send_word_to_url(brute_job_tx, results, brute_wordlist, rate).await });
+    rt.spawn(
+        async move { save_discoveries(out_pb, outfile_handle_brute, brute_result_rx).await },
+    );
+    // process the jobs for directory bruteforcing.
+    let workers = FuturesUnordered::new();
+    for _ in 0..concurrency {
+        let brx = brute_job_rx.clone();
+        let btx: mpsc::Sender<BruteResult> = brute_result_tx.clone();
+        let bpb = job_pb.clone();
+        workers.push(task::spawn(async move {
+            run_bruteforcer(bpb, brx, btx, timeout).await
+        }));
+    }
+    let worker_results: Vec<_> = workers.collect().await;
+    for result in worker_results {
+        let result = match result {
+            Ok(result) => result,
+            Err(_) => continue,
+        };
+        let result_data = result.data.clone();
+        if result.data.is_empty() == false {
+            brute_results.push(result_data);
         }
     }
 
@@ -561,16 +561,14 @@ async fn send_url(
     };
 
     // start the scan
-    for url in urls.iter() {
-        for payload in payloads.iter() {
-            let msg = Job {
-                settings: Some(job_settings.clone()),
-                url: Some(url.clone()),
-                payload: Some(payload.clone()),
-            };
-            if let Err(_) = tx.send(msg) {
-                continue;
-            }
+    for (url,payload) in iproduct!(urls, payloads)  {
+        let msg = Job {
+            settings: Some(job_settings.clone()),
+            url: Some(url.clone()),
+            payload: Some(payload.clone()),
+        };
+        if let Err(_) = tx.send(msg) {
+            continue;
         }
         lim.until_ready().await;
     }
@@ -580,7 +578,7 @@ async fn send_url(
 // this function will send the jobs to the workers
 async fn send_word_to_url(
     mut tx: spmc::Sender<BruteJob>,
-    url: String,
+    urls: Vec<String>,
     wordlists: Vec<String>,
     rate: u32,
 ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
@@ -588,7 +586,7 @@ async fn send_word_to_url(
     let lim = RateLimiter::direct(Quota::per_second(std::num::NonZeroU32::new(rate).unwrap()));
 
     // start the scan
-    for word in wordlists.iter() {
+    for (word, url) in iproduct!(wordlists, urls) {
         let url_cp = url.clone();
         let msg = BruteJob {
             url: Some(url_cp),
