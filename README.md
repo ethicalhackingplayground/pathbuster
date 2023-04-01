@@ -35,6 +35,7 @@
 - [x] Implement **--drop-after-fail** which will ignore requests with the same response code multiple times in a row.
 - [x] Fixed a ton of performance issues and included directory bruteforcing at the end.
 - [x] Massive performance and accuracy increases using itertools instead of double for loops reducing O(n^2) time complexity.
+- [x] Added in a **--proxy** argument, so you can now perform proxy-related tasks such as sending everything to burp.
 ---
 
 ## Installation
