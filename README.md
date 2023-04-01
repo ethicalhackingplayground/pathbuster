@@ -82,7 +82,7 @@ OPTIONS:
             The output file
 
     -p, --proxy <proxy>
-            The amount of concurrent requests [default: 1000]
+            http proxy to use (eg http://127.0.0.1:8080) [default: ]
 
         --payloads <payloads>
             the file containing the traversal payloads [default: ./payloads/traversals.txt]
