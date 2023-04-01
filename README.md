@@ -80,6 +80,9 @@ OPTIONS:
     -o, --out <out>
             The output file
 
+    -p, --proxy <proxy>
+            The amount of concurrent requests [default: 1000]
+
         --payloads <payloads>
             the file containing the traversal payloads [default: ./payloads/traversals.txt]
 
@@ -96,7 +99,7 @@ OPTIONS:
             Print version information
 
     -w, --workers <workers>
-            The amount of workers [default: 1]
+            The amount of workers [default: 10]
 
         --wordlist <wordlist>
             the file containing the wordlist used for directory bruteforcing [default:
