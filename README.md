@@ -116,6 +116,7 @@ OPTIONS:
 | --timeout | the delay between each request |
 | --concurrency | number of threads to be used for processing |
 | --wordlist | the wordlist used for directory bruteforcing |
+| --proxy | http proxy to use (eg http://127.0.0.1:8080) |
 | --out | save output to a file |
 | --help | prints help information |
 | --version | prints version information |
