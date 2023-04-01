@@ -67,7 +67,7 @@ pub async fn run_bruteforcer(
     );
 
     let client;
-    if !http_proxy.is_empty() {
+    if http_proxy.is_empty() {
         //no certs
         client = reqwest::Client::builder()
             .default_headers(headers)
