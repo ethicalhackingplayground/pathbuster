@@ -1,4 +1,4 @@
-use std::{error::Error, time::Duration, process::exit};
+use std::{error::Error, process::exit, time::Duration};
 
 use colored::Colorize;
 use differ::{Differ, Tag};
@@ -77,7 +77,7 @@ pub async fn run_bruteforcer(
             .danger_accept_invalid_certs(true)
             .build()
             .unwrap();
-    }else{
+    } else {
         let proxy = match Proxy::all(http_proxy) {
             Ok(proxy) => proxy,
             Err(e) => {
@@ -87,14 +87,14 @@ pub async fn run_bruteforcer(
         };
         //no certs
         client = reqwest::Client::builder()
-        .default_headers(headers)
-        .redirect(redirect::Policy::none())
-        .timeout(Duration::from_secs(timeout.try_into().unwrap()))
-        .danger_accept_invalid_hostnames(true)
-        .danger_accept_invalid_certs(true)
-        .proxy(proxy)
-        .build()
-        .unwrap();
+            .default_headers(headers)
+            .redirect(redirect::Policy::none())
+            .timeout(Duration::from_secs(timeout.try_into().unwrap()))
+            .danger_accept_invalid_hostnames(true)
+            .danger_accept_invalid_certs(true)
+            .proxy(proxy)
+            .build()
+            .unwrap();
     }
 
     while let Ok(job) = rx.recv() {
@@ -129,11 +129,30 @@ pub async fn run_bruteforcer(
         let internal_url = internal_web_root_url.clone();
         let internal_web_url = internal_url.clone();
 
-        pb.set_message(format!(
-            "{} {}",
-            "directory bruteforcing ::".bold().white(),
-            internal_url.bold().blue(),
-        ));
+        if pb.eta().as_secs_f32() >= 60.0 {
+            if (pb.eta().as_secs_f32() / 60.0) >= 60.0 {
+                pb.set_message(format!(
+                    "eta: {}h {} {}",
+                    ((pb.eta().as_secs_f32() / 60.0) / 60.0).round().to_string(),
+                    "directory bruteforcing ::".bold().white(),
+                    internal_url.bold().blue(),
+                ));
+            }else{
+                pb.set_message(format!(
+                    "eta: {}m {} {}",
+                    (pb.eta().as_secs_f32() / 60.0).round().to_string(),
+                    "directory bruteforcing ::".bold().white(),
+                    internal_url.bold().blue(),
+                ));
+            }
+        } else {
+            pb.set_message(format!(
+                " eta: {}s {} {}",
+                (pb.eta().as_secs_f32()).round().to_string(),
+                "directory bruteforcing ::".bold().white(),
+                internal_url.bold().blue(),
+            ));
+        }
 
         let get = client.get(internal_web_url);
         let internal_get = client.get(internal_web_root_url);

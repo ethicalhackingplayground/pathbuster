@@ -38,7 +38,7 @@ fn print_banner() {
   / /_/ / /_/ / /_/ / / / /_/ / /_/ (__  ) /_/  __/ /    
  / .___/\__,_/\__/_/ /_/_.___/\__,_/____/\__/\___/_/     
 /_/                                                          
-                     v0.4.4
+                     v0.4.5
                      ------
         path normalization pentesting tool                       
     "#;
@@ -80,7 +80,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     // parse the cli arguments
     let matches = App::new("pathbuster")
-        .version("0.4.4")
+        .version("0.4.5")
         .author("Blake Jacobs <krypt0mux@gmail.com>")
         .about("path-normalization pentesting tool")
         .arg(
@@ -355,7 +355,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     );
     println!("");
 
-    let pb = ProgressBar::new(0);
+    let bar_length = (urls.len() * payloads.len()) as u64;
+
+    let pb = ProgressBar::new(bar_length);
     pb.set_draw_target(ProgressDrawTarget::stderr());
     pb.enable_steady_tick(Duration::from_millis(500));
     pb.set_style(
@@ -430,6 +432,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             detector::save_traversals(out_pb, outfile_handle_traversal, out_data).await;
         }
     }
+    let pb_results = results.clone();
     let outfile_path_brute = outfile_path_brute.clone();
     let outfile_handle_brute = match OpenOptions::new()
         .create(true)
@@ -445,7 +448,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         }
     };
     let out_pb = out_pb.clone();
-    out_pb.set_length(0);
+    let bar_length = (pb_results.len() * wordlist.len()) as u64;
+    out_pb.set_length(bar_length);
     let brute_wordlist = brute_wordlist.clone();
     let (brute_job_tx, brute_job_rx) = spmc::channel::<BruteJob>();
     let (brute_result_tx, brute_result_rx) = mpsc::channel::<BruteResult>(w);
@@ -456,6 +460,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     rt.spawn(async move {
         bruteforcer::save_discoveries(out_pb, outfile_handle_brute, brute_result_rx).await
     });
+
     // process the jobs for directory bruteforcing.
     let workers = FuturesUnordered::new();
     for _ in 0..concurrency {
@@ -484,7 +489,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     // print out the discoveries.
     for result in brute_results {
         println!(
-            "{} {}",
+            "\n{} {}",
             "discovered ::".bold().green(),
             result.bold().white()
         );

@@ -1,4 +1,4 @@
-use std::{error::Error, time::Duration, process::exit};
+use std::{error::Error, process::exit, time::Duration};
 
 use colored::Colorize;
 use differ::{Differ, Tag};
@@ -94,7 +94,7 @@ pub async fn run_tester(
             .danger_accept_invalid_certs(true)
             .build()
             .unwrap();
-    }else{
+    } else {
         let proxy = match Proxy::all(http_proxy) {
             Ok(proxy) => proxy,
             Err(e) => {
@@ -104,16 +104,15 @@ pub async fn run_tester(
         };
         //no certs
         client = reqwest::Client::builder()
-        .default_headers(headers)
-        .redirect(redirect::Policy::none())
-        .timeout(Duration::from_secs(timeout.try_into().unwrap()))
-        .danger_accept_invalid_hostnames(true)
-        .danger_accept_invalid_certs(true)
-        .proxy(proxy)
-        .build()
-        .unwrap();
+            .default_headers(headers)
+            .redirect(redirect::Policy::none())
+            .timeout(Duration::from_secs(timeout.try_into().unwrap()))
+            .danger_accept_invalid_hostnames(true)
+            .danger_accept_invalid_certs(true)
+            .proxy(proxy)
+            .build()
+            .unwrap();
     }
-
 
     while let Ok(job) = rx.recv() {
         let job_url = job.url.unwrap();
@@ -157,11 +156,32 @@ pub async fn run_tester(
                 new_url.push_str("/");
             }
             new_url.push_str(&payload);
-            pb.set_message(format!(
-                "{} {}",
-                "scanning ::".bold().white(),
-                new_url.bold().blue(),
-            ));
+
+            if pb.eta().as_secs_f32() >= 60.0 {
+                if  (pb.eta().as_secs_f32() / 60.0) >= 60.0 {
+                    pb.set_message(format!(
+                        "eta: {}h {} {}",
+                        ((pb.eta().as_secs_f32() / 60.0) / 60.0).round().to_string(),
+                        "scanning ::".bold().white(),
+                        new_url.bold().blue(),
+                    ));
+                }else{
+                    pb.set_message(format!(
+                        "eta: {}m {} {}",
+                        (pb.eta().as_secs_f32() / 60.0).round().to_string(),
+                        "scanning ::".bold().white(),
+                        new_url.bold().blue(),
+                    ));
+                }
+            } else {
+                pb.set_message(format!(
+                    " eta: {}s {} {}",
+                    (pb.eta().as_secs_f32()).round().to_string(),
+                    "scanning ::".bold().white(),
+                    new_url.bold().blue(),
+                ));
+            }
+
             let new_url2 = new_url.clone();
             let get = client.get(new_url);
             let req = match get.build() {
