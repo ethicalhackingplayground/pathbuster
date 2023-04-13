@@ -15,6 +15,7 @@ use crate::utils;
 #[derive(Clone, Debug)]
 pub struct BruteResult {
     pub data: String,
+    pub rs: String,
 }
 
 // the Job struct which will be used as jobs for directory bruteforcing
@@ -208,9 +209,14 @@ pub async fn run_bruteforcer(
             }
         };
 
+        let content_length = match resp.content_length() {
+            Some(content_length) => content_length.to_string(),
+            None => "".to_string(),
+        };
+
         let (ok, distance_between_responses) =
             utils::get_response_change(&internal_resp_text, &public_resp_text);
-        if ok && (resp.status().as_str() == "200" || resp.status().as_str() == "401") {
+        if ok && resp.status().as_str() == "200" {
             let internal_resp_text_lines = internal_resp_text.lines().collect::<Vec<_>>();
             let public_resp_text_lines = public_resp_text.lines().collect::<Vec<_>>();
             let character_differences =
@@ -265,6 +271,7 @@ pub async fn run_bruteforcer(
             // send the result message through the channel to the workers.
             let result_msg = BruteResult {
                 data: internal_url.to_owned(),
+                rs: content_length,
             };
             let result = result_msg.clone();
             if let Err(_) = tx.send(result_msg).await {
@@ -276,6 +283,7 @@ pub async fn run_bruteforcer(
     }
     return BruteResult {
         data: "".to_string(),
+        rs: "".to_string(),
     };
 }
 

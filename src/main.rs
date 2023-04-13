@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::error::Error;
 use std::io::Write;
 use std::process::exit;
@@ -38,7 +39,7 @@ fn print_banner() {
   / /_/ / /_/ / /_/ / / / /_/ / /_/ (__  ) /_/  __/ /    
  / .___/\__,_/\__/_/ /_/_.___/\__,_/____/\__/\___/_/     
 /_/                                                          
-                     v0.5.0
+                     v0.5.1
                      ------
         path normalization pentesting tool                       
     "#;
@@ -80,7 +81,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     // parse the cli arguments
     let matches = App::new("pathbuster")
-        .version("0.5.0")
+        .version("0.5.1")
         .author("Blake Jacobs <krypt0mux@gmail.com>")
         .about("path-normalization pentesting tool")
         .arg(
@@ -402,7 +403,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     let brute_wordlist = wordlist.clone();
     let worker_results: Vec<_> = workers.collect().await;
     let mut results: Vec<String> = vec![];
-    let mut brute_results: Vec<String> = vec![];
+    let mut brute_results: HashMap<String, String> = HashMap::new();
     for result in worker_results {
         let result = match result {
             Ok(result) => result,
@@ -477,9 +478,10 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             Ok(result) => result,
             Err(_) => continue,
         };
+        let content_length = result.rs.clone();
         let result_data = result.data.clone();
         if result.data.is_empty() == false {
-            brute_results.push(result_data);
+            brute_results.insert(result_data, content_length);
         }
     }
 
@@ -490,7 +492,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     println!("{}", "Discovered:".bold().green());
     println!("{}", "===========".bold().green());
     for result in brute_results {
-        println!("{} {}", "::".bold().green(), result.bold().white());
+        println!(
+            "{} {} {} {}",
+            "::".bold().green(),
+            result.0.bold().white(),
+            "::".bold().green(),
+            result.1.bold().white()
+        );
     }
 
     let elapsed_time = now.elapsed();
