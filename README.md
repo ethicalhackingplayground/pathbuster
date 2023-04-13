@@ -29,7 +29,7 @@
 
 ---
 
-### What's New?
+## What's New?
 
 - [x] Removed redundant **--filter-status** which filtered the status codes but also missed a ton of valid findings.
 - [x] Removed redundant **--filter-body-size** which filtered the response sizes but also missed a ton of valid findings.
@@ -39,7 +39,7 @@
 ---
 
 
-### Bug fixes?
+## Bug fixes?
 
 - [x] Fixed a bug with the **--proxy** argument as well as some other small bugs.
 - [x] Fixed a ton of performance issues and included directory bruteforcing at the end.
