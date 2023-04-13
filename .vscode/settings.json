@@ -2,6 +2,7 @@
     "editor.tabCompletion": "on",
     "diffEditor.codeLens": true,
     "rust-analyzer.linkedProjects": [
+        ".\\Cargo.toml",
         ".\\Cargo.toml"
     ]
 }

@@ -120,7 +120,6 @@ pub async fn run_tester(
         let job_settings = job.settings.unwrap();
         let job_url_new = job_url.clone();
         let job_payload_new = job_payload.clone();
-        pb.inc(1);
         let url = match reqwest::Url::parse(&job_url_new) {
             Ok(url) => url,
             Err(_) => {
@@ -550,12 +549,12 @@ pub async fn run_tester(
                     if let Err(_) = tx.send(result_msg).await {
                         continue;
                     }
-                    pb.inc_length(1);
                     return result_job;
                 }
             }
             payload.push_str(&job_payload_new);
         }
+        pb.inc(1);
     }
     return JobResult {
         data: "".to_string(),

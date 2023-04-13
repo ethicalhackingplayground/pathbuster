@@ -111,8 +111,6 @@ pub async fn run_bruteforcer(
             }
         };
 
-        pb.inc(1);
-
         let schema = url.scheme().to_string();
         let host = match url.host_str() {
             Some(host) => host,
@@ -212,7 +210,7 @@ pub async fn run_bruteforcer(
 
         let (ok, distance_between_responses) =
             utils::get_response_change(&internal_resp_text, &public_resp_text);
-        if ok && resp.status().as_str() != "404" && resp.status().as_str() != "400" {
+        if ok && resp.status().as_str() == "200" || resp.status().as_str() == "401" {
             let internal_resp_text_lines = internal_resp_text.lines().collect::<Vec<_>>();
             let public_resp_text_lines = public_resp_text.lines().collect::<Vec<_>>();
             let character_differences =
@@ -263,7 +261,6 @@ pub async fn run_bruteforcer(
                 "deviations from webroot ::".bold().white(),
                 internal_url.bold().blue(),
             ));
-            pb.inc_length(1);
 
             // send the result message through the channel to the workers.
             let result_msg = BruteResult {
@@ -276,6 +273,7 @@ pub async fn run_bruteforcer(
 
             return result;
         }
+        pb.inc(1);
     }
     return BruteResult {
         data: "".to_string(),

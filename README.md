@@ -41,6 +41,7 @@
 
 ## Bug fixes?
 
+- [x] Fixed a bug with the ETA, it would not produce the correct results.
 - [x] Fixed a bug with the **--proxy** argument as well as some other small bugs.
 - [x] Fixed a ton of performance issues and included directory bruteforcing at the end.
 - [x] Massive performance and accuracy increases using itertools instead of double for loops reducing O(n^2) time complexity.

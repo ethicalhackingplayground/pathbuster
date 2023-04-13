@@ -38,7 +38,7 @@ fn print_banner() {
   / /_/ / /_/ / /_/ / / / /_/ / /_/ (__  ) /_/  __/ /    
  / .___/\__,_/\__/_/ /_/_.___/\__,_/____/\__/\___/_/     
 /_/                                                          
-                     v0.4.7
+                     v0.4.9
                      ------
         path normalization pentesting tool                       
     "#;
@@ -80,7 +80,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     // parse the cli arguments
     let matches = App::new("pathbuster")
-        .version("0.4.7")
+        .version("0.4.9")
         .author("Blake Jacobs <krypt0mux@gmail.com>")
         .about("path-normalization pentesting tool")
         .arg(
@@ -356,7 +356,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     let pb = ProgressBar::new(bar_length);
     pb.set_draw_target(ProgressDrawTarget::stderr());
-    pb.enable_steady_tick(Duration::from_millis(500));
+    pb.enable_steady_tick(Duration::from_millis(200));
     pb.set_style(
         ProgressStyle::default_bar()
             .template("{spinner:.blue} {elapsed} ({len}) {pos} {msg}")
@@ -445,7 +445,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         }
     };
     let out_pb = out_pb.clone();
-    let bar_length = (pb_results.len() * wordlist.len()) as u64;
+    let bar_length = (pb_results.len() * wordlist.len() + w) as u64;
     out_pb.set_length(bar_length);
     let brute_wordlist = brute_wordlist.clone();
     let (brute_job_tx, brute_job_rx) = spmc::channel::<BruteJob>();

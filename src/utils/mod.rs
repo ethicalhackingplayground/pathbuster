@@ -8,12 +8,12 @@ struct Threshold {
 }
 // make it global :)
 const CHANGE: Threshold = Threshold {
-    threshold_start: 30.0,
+    threshold_start: 50.0,
     threshold_end: 50000.0,
 };
 // uses the sift3 alogirthm to find the differences between to str inputs.
 pub fn get_response_change(a: &str, b: &str) -> (bool, f32) {
-    let s = sift3(a, b);
+    let s = sift3(b, a);
     if s > CHANGE.threshold_start && s < CHANGE.threshold_end {
         return (true, s);
     }
