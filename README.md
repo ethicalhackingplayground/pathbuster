@@ -17,8 +17,8 @@
 ---
 
 <p align="center">
-  <a href="#whats-new">Todos</a> •
-    <a href="#bug-fixes">Todos</a> •
+  <a href="#whats-new">Whats New</a> •
+  <a href="#bug-fixes">Bug Fixes</a> •
   <a href="#installation">Installation</a> •
   <a href="#usage">Usage</a> •
   <a href="#examples">Examples</a> •
