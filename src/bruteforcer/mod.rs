@@ -101,7 +101,7 @@ pub async fn run_bruteforcer(
         let job_url = job.url.unwrap();
         let job_word = job.word.unwrap();
         let job_url_new = job_url.clone();
-
+        pb.inc(1);
         let mut web_root_url: String = String::from("");
         let mut internal_web_root_url: String = String::from(job_url);
         let url = match reqwest::Url::parse(&job_url_new) {
@@ -185,12 +185,12 @@ pub async fn run_bruteforcer(
         };
 
         let public_resp_text = match public_resp.text().await {
-            Ok(public_cl) => public_cl,
+            Ok(public_resp_text) => public_resp_text,
             Err(_) => continue,
         };
 
         let internal_resp_text = match internal_resp.text().await {
-            Ok(internal_cl) => internal_cl,
+            Ok(internal_resp_text) => internal_resp_text,
             Err(_) => continue,
         };
 
@@ -210,7 +210,7 @@ pub async fn run_bruteforcer(
 
         let (ok, distance_between_responses) =
             utils::get_response_change(&internal_resp_text, &public_resp_text);
-        if ok && resp.status().as_str() == "200" || resp.status().as_str() == "401" {
+        if ok && (resp.status().as_str() == "200" || resp.status().as_str() == "401") {
             let internal_resp_text_lines = internal_resp_text.lines().collect::<Vec<_>>();
             let public_resp_text_lines = public_resp_text.lines().collect::<Vec<_>>();
             let character_differences =
@@ -270,10 +270,9 @@ pub async fn run_bruteforcer(
             if let Err(_) = tx.send(result_msg).await {
                 continue;
             }
-
+            pb.inc_length(1);
             return result;
         }
-        pb.inc(1);
     }
     return BruteResult {
         data: "".to_string(),

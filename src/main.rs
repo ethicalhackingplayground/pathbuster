@@ -38,7 +38,7 @@ fn print_banner() {
   / /_/ / /_/ / /_/ / / / /_/ / /_/ (__  ) /_/  __/ /    
  / .___/\__,_/\__/_/ /_/_.___/\__,_/____/\__/\___/_/     
 /_/                                                          
-                     v0.4.9
+                     v0.5.0
                      ------
         path normalization pentesting tool                       
     "#;
@@ -80,7 +80,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     // parse the cli arguments
     let matches = App::new("pathbuster")
-        .version("0.4.9")
+        .version("0.5.0")
         .author("Blake Jacobs <krypt0mux@gmail.com>")
         .about("path-normalization pentesting tool")
         .arg(
@@ -445,8 +445,10 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         }
     };
     let out_pb = out_pb.clone();
-    let bar_length = (pb_results.len() * wordlist.len() + w) as u64;
+    let bar_length = (pb_results.len() * wordlist.len()) as u64;
     out_pb.set_length(bar_length);
+    out_pb.set_position(0);
+    let brute_pb = out_pb.clone();
     let brute_wordlist = brute_wordlist.clone();
     let (brute_job_tx, brute_job_rx) = spmc::channel::<BruteJob>();
     let (brute_result_tx, brute_result_rx) = mpsc::channel::<BruteResult>(w);
@@ -464,7 +466,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         let http_proxy = http_proxy.clone();
         let brx = brute_job_rx.clone();
         let btx: mpsc::Sender<BruteResult> = brute_result_tx.clone();
-        let bpb = job_pb.clone();
+        let bpb = brute_pb.clone();
         workers.push(task::spawn(async move {
             bruteforcer::run_bruteforcer(bpb, brx, btx, timeout, http_proxy).await
         }));

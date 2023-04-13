@@ -1,15 +1,12 @@
 use std::{error::Error, process::exit, time::Duration};
 
 use colored::Colorize;
-use differ::{Differ, Tag};
 use governor::{Quota, RateLimiter};
 use indicatif::ProgressBar;
 use itertools::iproduct;
 use regex::Regex;
 use reqwest::{redirect, Proxy};
 use tokio::{fs::File, io::AsyncWriteExt, sync::mpsc};
-
-use crate::utils;
 
 // the Job struct which will be used to define our settings for the detection jobs
 #[derive(Clone, Debug)]
@@ -149,7 +146,6 @@ pub async fn run_tester(
         let new_url = String::from(&job_url);
         let mut track_status_codes = 0;
         for _ in 0..path_cnt {
-            let job_url_without_path = job_url_without_path.clone();
             let mut new_url = new_url.clone();
             if !new_url.as_str().ends_with("/") {
                 new_url.push_str("/");
@@ -191,19 +187,6 @@ pub async fn run_tester(
             };
             let resp = match client.execute(req).await {
                 Ok(resp) => resp,
-                Err(_) => {
-                    continue;
-                }
-            };
-            let pub_get = client.get(job_url_without_path);
-            let pub_req = match pub_get.build() {
-                Ok(pub_req) => pub_req,
-                Err(_) => {
-                    continue;
-                }
-            };
-            let pub_resp = match client.execute(pub_req).await {
-                Ok(pub_resp) => pub_resp,
                 Err(_) => {
                     continue;
                 }
@@ -251,38 +234,8 @@ pub async fn run_tester(
                     }
                 };
 
-                let internal_get = client.get(backonemore);
-
-                let internal_req = match internal_get.build() {
-                    Ok(internal_req) => internal_req,
-                    Err(_) => {
-                        continue;
-                    }
-                };
-                let internal_resp = match client.execute(internal_req).await {
-                    Ok(internal_resp) => internal_resp,
-                    Err(_) => {
-                        continue;
-                    }
-                };
-
-                let internal_cl = match internal_resp.text().await {
-                    Ok(internal_cl) => internal_cl,
-                    Err(_) => continue,
-                };
-
-                let public_cl = match pub_resp.text().await {
-                    Ok(public_cl) => public_cl,
-                    Err(_) => continue,
-                };
-
                 // we hit the internal doc root.
-                let (ok, distance_between_responses) =
-                    utils::get_response_change(&internal_cl, &public_cl);
-                if response.status().as_str() != "400"
-                    && ok
-                    && result_url.contains(&job_payload_new)
-                {
+                if response.status().as_str() != "400" && result_url.contains(&job_payload_new) {
                     // track the status codes
                     if job_settings.drop_after_fail == response.status().as_str() {
                         track_status_codes += 1;
@@ -314,41 +267,9 @@ pub async fn run_tester(
                         },
                         None => "Unknown",
                     };
-
-                    let internal_resp_text_lines = internal_cl.lines().collect::<Vec<_>>();
-                    let public_resp_text_lines = public_cl.lines().collect::<Vec<_>>();
-                    let character_differences =
-                        Differ::new(&public_resp_text_lines, &internal_resp_text_lines);
-                    if character_differences.spans().len() > 0 {
-                        pb.println(format!(
-                            "\n{}{}{} {}",
-                            "(".bold().white(),
-                            "*".bold().blue(),
-                            ")".bold().white(),
-                            "found some response changes:".bold().green(),
-                        ));
-                        for span in character_differences.spans() {
-                            match span.tag {
-                                Tag::Equal => (),  // ignore
-                                Tag::Insert => (), // ignore
-                                Tag::Delete => (), // ignore
-                                Tag::Replace => {
-                                    for line in &internal_resp_text_lines[span.b_start..span.b_end]
-                                    {
-                                        if line.to_string() == "" {
-                                            pb.println(format!("\n{}", line.bold().white(),));
-                                        } else {
-                                            pb.println(format!("{}", line.bold().white(),));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    pb.println(format!("\n"));
                     if response.status().is_client_error() {
                         pb.println(format!(
-                            "{}{}{} {}{}{}\n{}{}{} {}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t",
+                            "{}{}{} {}{}{}\n{}{}{} {}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t",
                             "[".bold().white(),
                             "OK".bold().green(),
                             "]".bold().white(),
@@ -379,15 +300,11 @@ pub async fn run_tester(
                             "[".bold().white(),
                             title.bold().purple(),
                             "]".bold().white(),
-                            "deviation:".bold().white(),
-                            "[".bold().white(),
-                            distance_between_responses.to_string().bold().purple(),
-                            "]".bold().white(),
                         ));
                     }
                     if response.status().is_success() {
                         pb.println(format!(
-                            "{}{}{} {}{}{}\n{}{}{} {}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t",
+                            "{}{}{} {}{}{}\n{}{}{} {}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t",
                             "[".bold().white(),
                             "OK".bold().green(),
                             "]".bold().white(),
@@ -418,15 +335,11 @@ pub async fn run_tester(
                             "[".bold().white(),
                             title.bold().purple(),
                             "]".bold().white(),
-                            "deviation:".bold().white(),
-                            "[".bold().white(),
-                            distance_between_responses.to_string().bold().purple(),
-                            "]".bold().white(),
                         ));
                     }
                     if response.status().is_redirection() {
                         pb.println(format!(
-                            "{}{}{} {}{}{}\n{}{}{} {}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t",
+                            "{}{}{} {}{}{}\n{}{}{} {}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t",
                             "[".bold().white(),
                             "OK".bold().green(),
                             "]".bold().white(),
@@ -457,15 +370,11 @@ pub async fn run_tester(
                             "[".bold().white(),
                             title.bold().purple(),
                             "]".bold().white(),
-                            "deviation:".bold().white(),
-                            "[".bold().white(),
-                            distance_between_responses.to_string().bold().purple(),
-                            "]".bold().white(),
                         ));
                     }
                     if response.status().is_server_error() {
                         pb.println(format!(
-                            "{}{}{} {}{}{}\n{}{}{} {}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t",
+                            "{}{}{} {}{}{}\n{}{}{} {}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t",
                             "[".bold().white(),
                             "OK".bold().green(),
                             "]".bold().white(),
@@ -496,15 +405,11 @@ pub async fn run_tester(
                             "[".bold().white(),
                             title.bold().purple(),
                             "]".bold().white(),
-                            "deviation:".bold().white(),
-                            "[".bold().white(),
-                            distance_between_responses.to_string().bold().purple(),
-                            "]".bold().white(),
                         ));
                     }
                     if response.status().is_informational() {
                         pb.println(format!(
-                            "{}{}{} {}{}{}\n{}{}{} {}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t",
+                            "{}{}{} {}{}{}\n{}{}{} {}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t {} {}{}{}\n\t",
                             "[".bold().white(),
                             "OK".bold().green(),
                             "]".bold().white(),
@@ -534,10 +439,6 @@ pub async fn run_tester(
                             "title:".bold().white(),
                             "[".bold().white(),
                             title.bold().purple(),
-                            "]".bold().white(),
-                            "deviation:".bold().white(),
-                            "[".bold().white(),
-                            distance_between_responses.to_string().bold().purple(),
                             "]".bold().white(),
                         ));
                     }
