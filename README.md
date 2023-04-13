@@ -17,7 +17,8 @@
 ---
 
 <p align="center">
-  <a href="#todos">Todos</a> •
+  <a href="#whats-new">Todos</a> •
+    <a href="#bug-fixes">Todos</a> •
   <a href="#installation">Installation</a> •
   <a href="#usage">Usage</a> •
   <a href="#examples">Examples</a> •
@@ -33,10 +34,16 @@
 - [x] Removed redundant **--filter-status** which filtered the status codes but also missed a ton of valid findings.
 - [x] Removed redundant **--filter-body-size** which filtered the response sizes but also missed a ton of valid findings.
 - [x] Implemented **--drop-after-fail** which will ignore requests with the same response code multiple times in a row.
-- [x] Fixed a ton of performance issues and included directory bruteforcing at the end.
-- [x] Massive performance and accuracy increases using itertools instead of double for loops reducing O(n^2) time complexity.
 - [x] Added in a **--proxy** argument, so you can now perform proxy-related tasks such as sending everything to burp.
 - [x] Pathbuster will now give you an eta on when the tool will finish processing all jobs.
+---
+
+
+### Bug fixes?
+
+- [x] Fixed a bug with the **--proxy** argument as well as some other small bugs.
+- [x] Fixed a ton of performance issues and included directory bruteforcing at the end.
+- [x] Massive performance and accuracy increases using itertools instead of double for loops reducing O(n^2) time complexity.
 ---
 
 ## Installation

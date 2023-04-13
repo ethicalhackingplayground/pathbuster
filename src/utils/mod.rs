@@ -8,7 +8,7 @@ struct Threshold {
 }
 // make it global :)
 const CHANGE: Threshold = Threshold {
-    threshold_start: 50.0,
+    threshold_start: 30.0,
     threshold_end: 50000.0,
 };
 // uses the sift3 alogirthm to find the differences between to str inputs.

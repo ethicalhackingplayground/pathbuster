@@ -38,7 +38,7 @@ fn print_banner() {
   / /_/ / /_/ / /_/ / / / /_/ / /_/ (__  ) /_/  __/ /    
  / .___/\__,_/\__/_/ /_/_.___/\__,_/____/\__/\___/_/     
 /_/                                                          
-                     v0.4.5
+                     v0.4.6
                      ------
         path normalization pentesting tool                       
     "#;
@@ -80,7 +80,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     // parse the cli arguments
     let matches = App::new("pathbuster")
-        .version("0.4.5")
+        .version("0.4.6")
         .author("Blake Jacobs <krypt0mux@gmail.com>")
         .about("path-normalization pentesting tool")
         .arg(
@@ -134,7 +134,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             Arg::with_name("proxy")
                 .short('p')
                 .long("proxy")
-                .default_value("http://127.0.0.1:8080")
+                .required(false)
                 .takes_value(true)
                 .help("http proxy to use (eg http://127.0.0.1:8080)"),
         )
@@ -202,10 +202,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     let http_proxy = match matches.get_one::<String>("proxy").map(|p| p.to_string()) {
         Some(http_proxy) => http_proxy,
-        None => {
-            println!("{}", "could not parse http_proxy");
-            exit(1);
-        }
+        None => "".to_string(),
     };
 
     let payloads_path = match matches.value_of("payloads") {
@@ -487,16 +484,20 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     rt.shutdown_background();
 
     // print out the discoveries.
+    println!("\n\n");
+    println!("{}", "Discovered:".bold().green());
+    println!("{}", "===========".bold().green());
     for result in brute_results {
         println!(
-            "\n{} {}",
-            "discovered ::".bold().green(),
+            "{} {}",
+            "::".bold().green(),
             result.bold().white()
         );
     }
 
     let elapsed_time = now.elapsed();
 
+    println!("\n\n");
     println!(
         "{}, {} {}{}",
         "Completed!".bold().green(),

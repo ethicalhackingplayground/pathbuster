@@ -137,7 +137,7 @@ pub async fn run_bruteforcer(
                     "directory bruteforcing ::".bold().white(),
                     internal_url.bold().blue(),
                 ));
-            }else{
+            } else {
                 pb.set_message(format!(
                     "eta: {}m {} {}",
                     (pb.eta().as_secs_f32() / 60.0).round().to_string(),
@@ -230,18 +230,21 @@ pub async fn run_bruteforcer(
                     Tag::Insert => (), // ignore
                     Tag::Delete => (), // ignore
                     Tag::Replace => {
-                        let mut i = 0;
-                        for line in &internal_resp_text_lines[span.b_start..span.b_end] {
-                            i = i + 1;
-                            if i < 100 {
+                        if span.b_end < internal_resp_text_lines.len() {
+                            for line in &internal_resp_text_lines[span.b_start..span.b_end] {
                                 if line.to_string() == "" {
                                     pb.println(format!("\n{}", line.bold().white(),));
                                 } else {
                                     pb.println(format!("{}", line.bold().white(),));
                                 }
-                            } else {
-                                pb.println(format!("\n{}\n", "...".bold().white(),));
-                                break;
+                            }
+                        }else {
+                            for line in &internal_resp_text_lines[span.a_start..span.a_end] {
+                                if line.to_string() == "" {
+                                    pb.println(format!("\n{}", line.bold().white(),));
+                                } else {
+                                    pb.println(format!("{}", line.bold().white(),));
+                                }
                             }
                         }
                     }

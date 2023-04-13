@@ -88,7 +88,7 @@ pub async fn run_tester(
         //no certs
         client = reqwest::Client::builder()
             .default_headers(headers)
-            .redirect(redirect::Policy::none())
+            .redirect(redirect::Policy::limited(10))
             .timeout(Duration::from_secs(timeout.try_into().unwrap()))
             .danger_accept_invalid_hostnames(true)
             .danger_accept_invalid_certs(true)
@@ -105,7 +105,7 @@ pub async fn run_tester(
         //no certs
         client = reqwest::Client::builder()
             .default_headers(headers)
-            .redirect(redirect::Policy::none())
+            .redirect(redirect::Policy::limited(10))
             .timeout(Duration::from_secs(timeout.try_into().unwrap()))
             .danger_accept_invalid_hostnames(true)
             .danger_accept_invalid_certs(true)
@@ -158,14 +158,14 @@ pub async fn run_tester(
             new_url.push_str(&payload);
 
             if pb.eta().as_secs_f32() >= 60.0 {
-                if  (pb.eta().as_secs_f32() / 60.0) >= 60.0 {
+                if (pb.eta().as_secs_f32() / 60.0) >= 60.0 {
                     pb.set_message(format!(
                         "eta: {}h {} {}",
                         ((pb.eta().as_secs_f32() / 60.0) / 60.0).round().to_string(),
                         "scanning ::".bold().white(),
                         new_url.bold().blue(),
                     ));
-                }else{
+                } else {
                     pb.set_message(format!(
                         "eta: {}m {} {}",
                         (pb.eta().as_secs_f32() / 60.0).round().to_string(),
@@ -333,18 +333,11 @@ pub async fn run_tester(
                             Tag::Insert => (), // ignore
                             Tag::Delete => (), // ignore
                             Tag::Replace => {
-                                let mut i = 0;
                                 for line in &internal_resp_text_lines[span.b_start..span.b_end] {
-                                    i = i + 1;
-                                    if i < 100 {
-                                        if line.to_string() == "" {
-                                            pb.println(format!("\n{}", line.bold().white(),));
-                                        } else {
-                                            pb.println(format!("{}", line.bold().white(),));
-                                        }
+                                    if line.to_string() == "" {
+                                        pb.println(format!("\n{}", line.bold().white(),));
                                     } else {
-                                        pb.println(format!("\n{}", "...".bold().white(),));
-                                        break;
+                                        pb.println(format!("{}", line.bold().white(),));
                                     }
                                 }
                             }
