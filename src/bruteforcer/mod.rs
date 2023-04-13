@@ -217,33 +217,36 @@ pub async fn run_bruteforcer(
             let public_resp_text_lines = public_resp_text.lines().collect::<Vec<_>>();
             let character_differences =
                 Differ::new(&internal_resp_text_lines, &public_resp_text_lines);
-            pb.println(format!(
-                "\n{}{}{} {}",
-                "(".bold().white(),
-                "*".bold().blue(),
-                ")".bold().white(),
-                "found some response changes:".bold().green(),
-            ));
-            for span in character_differences.spans() {
-                match span.tag {
-                    Tag::Equal => (),  // ignore
-                    Tag::Insert => (), // ignore
-                    Tag::Delete => (), // ignore
-                    Tag::Replace => {
-                        if span.b_end < internal_resp_text_lines.len() {
-                            for line in &internal_resp_text_lines[span.b_start..span.b_end] {
-                                if line.to_string() == "" {
-                                    pb.println(format!("\n{}", line.bold().white(),));
-                                } else {
-                                    pb.println(format!("{}", line.bold().white(),));
+
+            if character_differences.spans().len() > 0 {
+                pb.println(format!(
+                    "\n{}{}{} {}",
+                    "(".bold().white(),
+                    "*".bold().blue(),
+                    ")".bold().white(),
+                    "found some response changes:".bold().green(),
+                ));
+                for span in character_differences.spans() {
+                    match span.tag {
+                        Tag::Equal => (),  // ignore
+                        Tag::Insert => (), // ignore
+                        Tag::Delete => (), // ignore
+                        Tag::Replace => {
+                            if span.b_end < internal_resp_text_lines.len() {
+                                for line in &internal_resp_text_lines[span.b_start..span.b_end] {
+                                    if line.to_string() == "" {
+                                        pb.println(format!("\n{}", line.bold().white(),));
+                                    } else {
+                                        pb.println(format!("{}", line.bold().white(),));
+                                    }
                                 }
-                            }
-                        }else {
-                            for line in &internal_resp_text_lines[span.a_start..span.a_end] {
-                                if line.to_string() == "" {
-                                    pb.println(format!("\n{}", line.bold().white(),));
-                                } else {
-                                    pb.println(format!("{}", line.bold().white(),));
+                            } else {
+                                for line in &internal_resp_text_lines[span.a_start..span.a_end] {
+                                    if line.to_string() == "" {
+                                        pb.println(format!("\n{}", line.bold().white(),));
+                                    } else {
+                                        pb.println(format!("{}", line.bold().white(),));
+                                    }
                                 }
                             }
                         }

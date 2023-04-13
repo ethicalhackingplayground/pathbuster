@@ -320,24 +320,27 @@ pub async fn run_tester(
                     let public_resp_text_lines = public_cl.lines().collect::<Vec<_>>();
                     let character_differences =
                         Differ::new(&public_resp_text_lines, &internal_resp_text_lines);
-                    pb.println(format!(
-                        "\n{}{}{} {}",
-                        "(".bold().white(),
-                        "*".bold().blue(),
-                        ")".bold().white(),
-                        "found some response changes:".bold().green(),
-                    ));
-                    for span in character_differences.spans() {
-                        match span.tag {
-                            Tag::Equal => (),  // ignore
-                            Tag::Insert => (), // ignore
-                            Tag::Delete => (), // ignore
-                            Tag::Replace => {
-                                for line in &internal_resp_text_lines[span.b_start..span.b_end] {
-                                    if line.to_string() == "" {
-                                        pb.println(format!("\n{}", line.bold().white(),));
-                                    } else {
-                                        pb.println(format!("{}", line.bold().white(),));
+                    if character_differences.spans().len() > 0 {
+                        pb.println(format!(
+                            "\n{}{}{} {}",
+                            "(".bold().white(),
+                            "*".bold().blue(),
+                            ")".bold().white(),
+                            "found some response changes:".bold().green(),
+                        ));
+                        for span in character_differences.spans() {
+                            match span.tag {
+                                Tag::Equal => (),  // ignore
+                                Tag::Insert => (), // ignore
+                                Tag::Delete => (), // ignore
+                                Tag::Replace => {
+                                    for line in &internal_resp_text_lines[span.b_start..span.b_end]
+                                    {
+                                        if line.to_string() == "" {
+                                            pb.println(format!("\n{}", line.bold().white(),));
+                                        } else {
+                                            pb.println(format!("{}", line.bold().white(),));
+                                        }
                                     }
                                 }
                             }
