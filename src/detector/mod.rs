@@ -11,7 +11,8 @@ use tokio::{fs::File, io::AsyncWriteExt, sync::mpsc};
 // the Job struct which will be used to define our settings for the detection jobs
 #[derive(Clone, Debug)]
 pub struct JobSettings {
-    match_status: String,
+    int_status: String,
+    pub_status: String,
     drop_after_fail: String,
 }
 
@@ -37,7 +38,8 @@ pub async fn send_url(
     urls: Vec<String>,
     payloads: Vec<String>,
     rate: u32,
-    match_status: String,
+    int_status: String,
+    pub_status: String,
     drop_after_fail: String,
 ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     //set rate limit
@@ -45,7 +47,8 @@ pub async fn send_url(
 
     // the job settings
     let job_settings = JobSettings {
-        match_status: match_status.to_string(),
+        int_status: int_status.to_string(),
+        pub_status: pub_status.to_string(),
         drop_after_fail: drop_after_fail,
     };
 
@@ -198,7 +201,7 @@ pub async fn run_tester(
             };
             let backonemore_url = new_url2.clone();
 
-            if job_settings.match_status.contains(resp.status().as_str()) {
+            if job_settings.pub_status.contains(resp.status().as_str()) {
                 // strip the suffix hax and traverse back one more level
                 // to reach the internal doc root.
                 let backonemore = match backonemore_url.strip_suffix(job_payload_new.as_str()) {
@@ -235,7 +238,7 @@ pub async fn run_tester(
                 };
 
                 // we hit the internal doc root.
-                if response.status().as_str() != "400" && result_url.contains(&job_payload_new) {
+                if job_settings.int_status.contains(&response.status().as_str())  && result_url.contains(&job_payload_new) {
                     // track the status codes
                     if job_settings.drop_after_fail == response.status().as_str() {
                         track_status_codes += 1;

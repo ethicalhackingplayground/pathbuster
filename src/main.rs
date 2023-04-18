@@ -39,7 +39,7 @@ fn print_banner() {
   / /_/ / /_/ / /_/ / / / /_/ / /_/ (__  ) /_/  __/ /    
  / .___/\__,_/\__/_/ /_/_.___/\__,_/____/\__/\___/_/     
 /_/                                                          
-                     v0.5.2
+                     v0.5.3
                      ------
         path normalization pentesting tool                       
     "#;
@@ -81,7 +81,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     // parse the cli arguments
     let matches = App::new("pathbuster")
-        .version("0.5.2")
+        .version("0.5.3")
         .author("Blake Jacobs <krypt0mux@gmail.com>")
         .about("path-normalization pentesting tool")
         .arg(
@@ -116,11 +116,20 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
                 .help("ignore requests with the same response code multiple times in a row"),
         )
         .arg(
-            Arg::with_name("match-status")
-                .long("match-status")
+            Arg::with_name("int-status")
+                .long("int-status")
                 .takes_value(true)
                 .required(false)
-                .default_value("400"),
+                .default_value("404,500")
+                .help("the internal web root status"),
+        )
+        .arg(
+            Arg::with_name("pub-status")
+                .long("pub-status")
+                .takes_value(true)
+                .required(false)
+                .default_value("400")
+                .help("the public web root status")
         )
         .arg(
             Arg::with_name("payloads")
@@ -245,11 +254,19 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     // copy some variables
     let _urls_path = urls_path.clone();
 
-    let match_status = match matches
-        .get_one::<String>("match-status")
+    let int_status = match matches
+        .get_one::<String>("int-status")
         .map(|s| s.to_string())
     {
-        Some(match_status) => match_status,
+        Some(int_status) => int_status,
+        None => "".to_string(),
+    };
+
+    let pub_status = match matches
+        .get_one::<String>("pub-status")
+        .map(|s| s.to_string())
+    {
+        Some(pub_status) => pub_status,
         None => "".to_string(),
     };
 
@@ -340,7 +357,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             .white()
     );
     println!(
-        "{}  {}    {} {}\n{}  {}        {} {}\n{}  {}    {} {}\n{}  {} {} {}\n{}  {}     {} {}",
+        "{}  {}      {} {}\n{}  {}          {} {}\n{}  {}  {} {}\n{}  {}  {} {}\n{}  {}   {} {}\n{}  {}       {} {}",
         ">".bold().green(),
         "Payloads".bold().white(),
         ":".bold().white(),
@@ -350,9 +367,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         ":".bold().white(),
         urls.len().to_string().bold().cyan(),
         ">".bold().green(),
-        "Matchers".bold().white(),
+        "Int Matchers".bold().white(),
         ":".bold().white(),
-        match_status.to_string().bold().cyan(),
+        int_status.to_string().bold().cyan(),
+        ">".bold().green(),
+        "Pub Matchers".bold().white(),
+        ":".bold().white(),
+        pub_status.to_string().bold().cyan(),
         ">".bold().green(),
         "Concurrency".bold().white(),
         ":".bold().white(),
@@ -386,7 +407,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     let out_pb = pb.clone();
     let job_pb = pb.clone();
     rt.spawn(async move {
-        detector::send_url(job_tx, urls, payloads, rate, match_status, drop_after_fail).await
+        detector::send_url(job_tx, urls, payloads, rate, int_status, pub_status, drop_after_fail).await
     });
 
     // process the jobs

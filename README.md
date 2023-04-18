@@ -37,6 +37,7 @@
 - [x] Added in a **--proxy** argument, so you can now perform proxy-related tasks such as sending everything to burp.
 - [x] Pathbuster will now give you an eta on when the tool will finish processing all jobs.
 - [x] Added in a **--skip-brute** argument, so you have the choice to perform a directory brute force or not.
+- [x] Replaced **--match-status** with **--pub-status** and **--int-status** so we have more control over the detection stage.
 ---
 
 
@@ -85,8 +86,8 @@ OPTIONS:
     -h, --help
             Print help information
 
-        --match-status <match-status>
-            [default: 400]
+        --int-status <int-status>
+            the internal web root status [default: 404,500]
 
     -o, --out <out>
             The output file
@@ -96,6 +97,9 @@ OPTIONS:
 
         --payloads <payloads>
             the file containing the traversal payloads [default: ./payloads/traversals.txt]
+
+        --pub-status <pub-status>
+            the public web root status [default: 400]
 
     -r, --rate <rate>
             Maximum in-flight requests per second [default: 1000]
@@ -126,7 +130,8 @@ OPTIONS:
 | ----------------- | ------------------------------------------------------------------ |
 | --urls | the file containing the urls to test make sure it contains a path
 | --payloads | file containing the payloads to test |
-| --match-status |  status code used to match internal responses |
+| --int-status | used to match the status codes for identifying the internal web root |
+| --pub-status | used to match the status codes for identifying broken path normalization |
 | --drop-after-fail |  specify a status code to ignore if it reoccurs more than 5 times in a row  |
 | --rate | used set the maximum in-flight requests per second |
 | --workers | number of workers to process the jobs |
