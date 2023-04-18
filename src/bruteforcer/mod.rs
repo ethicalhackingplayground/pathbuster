@@ -153,6 +153,7 @@ pub async fn run_bruteforcer(
             ));
         }
 
+        let internal_url = internal_web_url.clone();
         let get = client.get(internal_web_url);
         let internal_get = client.get(internal_web_root_url);
         let public_get = client.get(web_root_url);

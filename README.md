@@ -36,6 +36,7 @@
 - [x] Implemented **--drop-after-fail** which will ignore requests with the same response code multiple times in a row.
 - [x] Added in a **--proxy** argument, so you can now perform proxy-related tasks such as sending everything to burp.
 - [x] Pathbuster will now give you an eta on when the tool will finish processing all jobs.
+- [x] Added in a **--skip-brute** argument, so you have the choice to perform a directory brute force or not.
 ---
 
 
@@ -91,13 +92,16 @@ OPTIONS:
             The output file
 
     -p, --proxy <proxy>
-            http proxy to use (eg http://127.0.0.1:8080) [default: ]
+            http proxy to use (eg http://127.0.0.1:8080)
 
         --payloads <payloads>
             the file containing the traversal payloads [default: ./payloads/traversals.txt]
 
     -r, --rate <rate>
             Maximum in-flight requests per second [default: 1000]
+
+        --skip-brute <skip-brute>
+            skip the directory bruteforcing stage
 
         --timeout <timeout>
             The delay between each request [default: 10]
@@ -130,6 +134,7 @@ OPTIONS:
 | --concurrency | number of threads to be used for processing |
 | --wordlist | the wordlist used for directory bruteforcing |
 | --proxy | http proxy to use (eg http://127.0.0.1:8080) |
+| --skip-brute | use to skip the directory brute forcing stage |
 | --out | save output to a file |
 | --help | prints help information |
 | --version | prints version information |

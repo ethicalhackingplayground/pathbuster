@@ -39,7 +39,7 @@ fn print_banner() {
   / /_/ / /_/ / /_/ / / / /_/ / /_/ (__  ) /_/  __/ /    
  / .___/\__,_/\__/_/ /_/_.___/\__,_/____/\__/\___/_/     
 /_/                                                          
-                     v0.5.1
+                     v0.5.2
                      ------
         path normalization pentesting tool                       
     "#;
@@ -81,7 +81,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     // parse the cli arguments
     let matches = App::new("pathbuster")
-        .version("0.5.1")
+        .version("0.5.2")
         .author("Blake Jacobs <krypt0mux@gmail.com>")
         .about("path-normalization pentesting tool")
         .arg(
@@ -99,6 +99,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
                 .takes_value(true)
                 .default_value("1000")
                 .help("Maximum in-flight requests per second"),
+        )
+        .arg(
+            Arg::with_name("skip-brute")
+                .long("skip-brute")
+                .takes_value(true)
+                .required(false)
+                .help("skip the directory bruteforcing stage"),
         )
         .arg(
             Arg::with_name("drop-after-fail")
@@ -212,6 +219,16 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             println!("{}", "invalid payloads file");
             exit(1);
         }
+    };
+
+    let skip_dir = match matches
+        .value_of("skip-brute")
+        .map(|s| match s.parse::<bool>() {
+            Ok(s) => s,
+            Err(_) => false,
+        }) {
+        Some(skip_dir) => skip_dir,
+        None => false,
     };
 
     let wordlist_path = match matches.value_of("wordlist") {
@@ -430,61 +447,63 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             detector::save_traversals(out_pb, outfile_handle_traversal, out_data).await;
         }
     }
-    let pb_results = results.clone();
-    let outfile_path_brute = outfile_path_brute.clone();
-    let outfile_handle_brute = match OpenOptions::new()
-        .create(true)
-        .write(true)
-        .append(true)
-        .open(outfile_path_brute)
-        .await
-    {
-        Ok(outfile_handle_brute) => outfile_handle_brute,
-        Err(e) => {
-            println!("failed to open output file: {:?}", e);
-            exit(1);
-        }
-    };
-    let out_pb = out_pb.clone();
-    let bar_length = (pb_results.len() * wordlist.len()) as u64;
-    out_pb.set_length(bar_length);
-    out_pb.set_position(0);
-    let brute_pb = out_pb.clone();
-    let brute_wordlist = brute_wordlist.clone();
-    let (brute_job_tx, brute_job_rx) = spmc::channel::<BruteJob>();
-    let (brute_result_tx, brute_result_rx) = mpsc::channel::<BruteResult>(w);
-    // start orchestrator tasks
-    rt.spawn(async move {
-        bruteforcer::send_word_to_url(brute_job_tx, results, brute_wordlist, rate).await
-    });
-    rt.spawn(async move {
-        bruteforcer::save_discoveries(out_pb, outfile_handle_brute, brute_result_rx).await
-    });
 
-    // process the jobs for directory bruteforcing.
-    let workers = FuturesUnordered::new();
-    for _ in 0..concurrency {
-        let http_proxy = http_proxy.clone();
-        let brx = brute_job_rx.clone();
-        let btx: mpsc::Sender<BruteResult> = brute_result_tx.clone();
-        let bpb = brute_pb.clone();
-        workers.push(task::spawn(async move {
-            bruteforcer::run_bruteforcer(bpb, brx, btx, timeout, http_proxy).await
-        }));
-    }
-    let worker_results: Vec<_> = workers.collect().await;
-    for result in worker_results {
-        let result = match result {
-            Ok(result) => result,
-            Err(_) => continue,
+    if !skip_dir {
+        let pb_results = results.clone();
+        let outfile_path_brute = outfile_path_brute.clone();
+        let outfile_handle_brute = match OpenOptions::new()
+            .create(true)
+            .write(true)
+            .append(true)
+            .open(outfile_path_brute)
+            .await
+        {
+            Ok(outfile_handle_brute) => outfile_handle_brute,
+            Err(e) => {
+                println!("failed to open output file: {:?}", e);
+                exit(1);
+            }
         };
-        let content_length = result.rs.clone();
-        let result_data = result.data.clone();
-        if result.data.is_empty() == false {
-            brute_results.insert(result_data, content_length);
+        let out_pb = out_pb.clone();
+        let bar_length = (pb_results.len() * wordlist.len()) as u64;
+        out_pb.set_length(bar_length);
+        out_pb.set_position(0);
+        let brute_pb = out_pb.clone();
+        let brute_wordlist = brute_wordlist.clone();
+        let (brute_job_tx, brute_job_rx) = spmc::channel::<BruteJob>();
+        let (brute_result_tx, brute_result_rx) = mpsc::channel::<BruteResult>(w);
+        // start orchestrator tasks
+        rt.spawn(async move {
+            bruteforcer::send_word_to_url(brute_job_tx, results, brute_wordlist, rate).await
+        });
+        rt.spawn(async move {
+            bruteforcer::save_discoveries(out_pb, outfile_handle_brute, brute_result_rx).await
+        });
+
+        // process the jobs for directory bruteforcing.
+        let workers = FuturesUnordered::new();
+        for _ in 0..concurrency {
+            let http_proxy = http_proxy.clone();
+            let brx = brute_job_rx.clone();
+            let btx: mpsc::Sender<BruteResult> = brute_result_tx.clone();
+            let bpb = brute_pb.clone();
+            workers.push(task::spawn(async move {
+                bruteforcer::run_bruteforcer(bpb, brx, btx, timeout, http_proxy).await
+            }));
+        }
+        let worker_results: Vec<_> = workers.collect().await;
+        for result in worker_results {
+            let result = match result {
+                Ok(result) => result,
+                Err(_) => continue,
+            };
+            let content_length = result.rs.clone();
+            let result_data = result.data.clone();
+            if result.data.is_empty() == false {
+                brute_results.insert(result_data, content_length);
+            }
         }
     }
-
     rt.shutdown_background();
 
     // print out the discoveries.
