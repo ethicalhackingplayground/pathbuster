@@ -38,7 +38,7 @@ fn print_banner() {
   / /_/ / /_/ / /_/ / / / /_/ / /_/ (__  ) /_/  __/ /    
  / .___/\__,_/\__/_/ /_/_.___/\__,_/____/\__/\___/_/     
 /_/                                                          
-                     v0.5.4
+                     v0.5.5
                      ------
         path normalization pentesting tool                       
     "#;
@@ -80,7 +80,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     // parse the cli arguments
     let matches = App::new("pathbuster")
-        .version("0.5.3")
+        .version("0.5.5")
         .author("Blake Jacobs <krypt0mux@gmail.com>")
         .about("path-normalization pentesting tool")
         .arg(
