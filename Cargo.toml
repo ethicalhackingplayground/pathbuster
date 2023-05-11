@@ -2,7 +2,7 @@
 name = "pathbuster"
 authors = ["zoid", "<krypt0mux@gmail.com>"]
 description = "A path-normalization pentesting tool."
-version = "0.5.3"
+version = "0.5.4"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/ethicalhackingplayground/pathbuster"
@@ -25,11 +25,3 @@ rainbowcoat = "0.1.0"
 distance = "0.4.0"
 regex = "1.7.3"
 differ = "1.0.2"
-
-[dependencies.uuid]
-version = "1.3.0"
-features = [
-    "v4",                # Lets you generate random UUIDs
-    "fast-rng",          # Use a faster (but still sufficiently random) RNG
-    "macro-diagnostics", # Enable better diagnostics for compile-time UUIDs
-]

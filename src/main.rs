@@ -9,7 +9,6 @@ use clap::Arg;
 
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
-
 use tokio::fs::OpenOptions;
 use tokio::sync::mpsc;
 
@@ -39,7 +38,7 @@ fn print_banner() {
   / /_/ / /_/ / /_/ / / / /_/ / /_/ (__  ) /_/  __/ /    
  / .___/\__,_/\__/_/ /_/_.___/\__,_/____/\__/\___/_/     
 /_/                                                          
-                     v0.5.3
+                     v0.5.4
                      ------
         path normalization pentesting tool                       
     "#;
@@ -90,6 +89,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
                 .long("urls")
                 .takes_value(true)
                 .required(true)
+                .display_order(1)
                 .help("the url you would like to test"),
         )
         .arg(
@@ -98,13 +98,15 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
                 .long("rate")
                 .takes_value(true)
                 .default_value("1000")
+                .display_order(2)
                 .help("Maximum in-flight requests per second"),
         )
         .arg(
             Arg::with_name("skip-brute")
                 .long("skip-brute")
-                .takes_value(true)
+                .takes_value(false)
                 .required(false)
+                .display_order(3)
                 .help("skip the directory bruteforcing stage"),
         )
         .arg(
@@ -113,6 +115,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
                 .takes_value(true)
                 .default_value("302,301")
                 .required(false)
+                .display_order(4)
                 .help("ignore requests with the same response code multiple times in a row"),
         )
         .arg(
@@ -121,6 +124,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
                 .takes_value(true)
                 .required(false)
                 .default_value("404,500")
+                .display_order(5)
                 .help("the internal web root status"),
         )
         .arg(
@@ -129,13 +133,68 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
                 .takes_value(true)
                 .required(false)
                 .default_value("400")
-                .help("the public web root status")
+                .display_order(6)
+                .help("the public web root status"),
+        )
+        .arg(
+            Arg::with_name("proxy")
+                .short('p')
+                .long("proxy")
+                .required(false)
+                .takes_value(true)
+                .display_order(7)
+                .help("http proxy to use (eg http://127.0.0.1:8080)"),
+        )
+        .arg(
+            Arg::with_name("skip-validation")
+                .short('s')
+                .long("skip-validation")
+                .required(false)
+                .takes_value(false)
+                .display_order(8)
+                .long_help("this is used to bypass known protected endpoints using traversals")
+                .help("skips the validation process"),
+        )
+        .arg(
+            Arg::with_name("concurrency")
+                .short('c')
+                .long("concurrency")
+                .default_value("1000")
+                .takes_value(true)
+                .display_order(9)
+                .help("The amount of concurrent requests"),
+        )
+        .arg(
+            Arg::with_name("timeout")
+                .long("timeout")
+                .default_value("10")
+                .takes_value(true)
+                .display_order(10)
+                .help("The delay between each request"),
+        )
+        .arg(
+            Arg::with_name("header")
+                .long("header")
+                .default_value("")
+                .takes_value(true)
+                .display_order(11)
+                .help("The header to insert into each request"),
+        )
+        .arg(
+            Arg::with_name("workers")
+                .short('w')
+                .long("workers")
+                .default_value("10")
+                .takes_value(true)
+                .display_order(12)
+                .help("The amount of workers"),
         )
         .arg(
             Arg::with_name("payloads")
                 .long("payloads")
                 .required(true)
                 .takes_value(true)
+                .display_order(13)
                 .default_value("./payloads/traversals.txt")
                 .help("the file containing the traversal payloads"),
         )
@@ -144,44 +203,15 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
                 .long("wordlist")
                 .required(true)
                 .takes_value(true)
+                .display_order(14)
                 .default_value("./wordlists/wordlist.txt")
                 .help("the file containing the wordlist used for directory bruteforcing"),
-        )
-        .arg(
-            Arg::with_name("proxy")
-                .short('p')
-                .long("proxy")
-                .required(false)
-                .takes_value(true)
-                .help("http proxy to use (eg http://127.0.0.1:8080)"),
-        )
-        .arg(
-            Arg::with_name("concurrency")
-                .short('c')
-                .long("concurrency")
-                .default_value("1000")
-                .takes_value(true)
-                .help("The amount of concurrent requests"),
-        )
-        .arg(
-            Arg::with_name("timeout")
-                .long("timeout")
-                .default_value("10")
-                .takes_value(true)
-                .help("The delay between each request"),
-        )
-        .arg(
-            Arg::with_name("workers")
-                .short('w')
-                .long("workers")
-                .default_value("10")
-                .takes_value(true)
-                .help("The amount of workers"),
         )
         .arg(
             Arg::with_name("out")
                 .short('o')
                 .long("out")
+                .display_order(15)
                 .takes_value(true)
                 .help("The output file"),
         )
@@ -230,15 +260,16 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         }
     };
 
-    let skip_dir = match matches
-        .value_of("skip-brute")
-        .map(|s| match s.parse::<bool>() {
-            Ok(s) => s,
-            Err(_) => false,
-        }) {
-        Some(skip_dir) => skip_dir,
-        None => false,
+    let header = match matches.value_of("header").unwrap().parse::<String>() {
+        Ok(header) => header,
+        Err(_) => "".to_string(),
     };
+
+    let mut skip_dir = matches.is_present("skip-brute");
+    let skip_validation = matches.is_present("skip-validation");
+    if skip_validation {
+        skip_dir = true;
+    }
 
     let wordlist_path = match matches.value_of("wordlist") {
         Some(wordlist_path) => wordlist_path,
@@ -397,17 +428,29 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     pb.set_draw_target(ProgressDrawTarget::stderr());
     pb.enable_steady_tick(Duration::from_millis(200));
     pb.set_style(
-        ProgressStyle::default_bar()
-            .template("{spinner:.blue} {elapsed} ({len}) {pos} {msg}")
+        ProgressStyle::with_template("{spinner:.blue} ({eta}) {elapsed} ({len}) {pos} {msg}")
             .unwrap()
             .progress_chars(r#"#>-"#),
     );
 
     // spawn our workers
     let out_pb = pb.clone();
-    let job_pb = pb.clone();
+    let job_pb: ProgressBar = pb.clone();
+    let job_wordlist = wordlist.clone();
     rt.spawn(async move {
-        detector::send_url(job_tx, urls, payloads, rate, int_status, pub_status, drop_after_fail).await
+        detector::send_url(
+            job_tx,
+            urls,
+            payloads,
+            job_wordlist,
+            rate,
+            int_status,
+            pub_status,
+            drop_after_fail,
+            skip_validation,
+            header,
+        )
+        .await
     });
 
     // process the jobs

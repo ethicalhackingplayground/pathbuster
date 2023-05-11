@@ -128,30 +128,11 @@ pub async fn run_bruteforcer(
         let internal_url = internal_web_root_url.clone();
         let internal_web_url = internal_url.clone();
 
-        if pb.eta().as_secs_f32() >= 60.0 {
-            if (pb.eta().as_secs_f32() / 60.0) >= 60.0 {
-                pb.set_message(format!(
-                    "eta: {}h {} {}",
-                    ((pb.eta().as_secs_f32() / 60.0) / 60.0).round().to_string(),
-                    "directory bruteforcing ::".bold().white(),
-                    internal_url.bold().blue(),
-                ));
-            } else {
-                pb.set_message(format!(
-                    "eta: {}m {} {}",
-                    (pb.eta().as_secs_f32() / 60.0).round().to_string(),
-                    "directory bruteforcing ::".bold().white(),
-                    internal_url.bold().blue(),
-                ));
-            }
-        } else {
-            pb.set_message(format!(
-                " eta: {}s {} {}",
-                (pb.eta().as_secs_f32()).round().to_string(),
-                "directory bruteforcing ::".bold().white(),
-                internal_url.bold().blue(),
-            ));
-        }
+        pb.set_message(format!(
+            "{} {}",
+            "directory bruteforcing ::".bold().white(),
+            internal_url.bold().blue(),
+        ));
 
         let internal_url = internal_web_url.clone();
         let get = client.get(internal_web_url);

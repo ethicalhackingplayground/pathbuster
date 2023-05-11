@@ -38,6 +38,8 @@
 - [x] Pathbuster will now give you an eta on when the tool will finish processing all jobs.
 - [x] Added in a **--skip-brute** argument, so you have the choice to perform a directory brute force or not.
 - [x] Replaced **--match-status** with **--pub-status** and **--int-status** so we have more control over the detection stage.
+- [x] Added in a **--skip-validation** argument which is used to bypass known protected endpoints using traversals.
+- [x] Added in a **--header** argument which is used to add in additonal headers into each request.
 ---
 
 
@@ -77,51 +79,76 @@ USAGE:
     pathbuster [OPTIONS] --urls <urls> --payloads <payloads> --wordlist <wordlist>
 
 OPTIONS:
-    -c, --concurrency <concurrency>
-            The amount of concurrent requests [default: 1000]
+    -u, --urls <urls>
+            the url you would like to test
+
+    -r, --rate <rate>
+            Maximum in-flight requests per second
+
+            [default: 1000]
+
+        --skip-brute
+            skip the directory bruteforcing stage
 
         --drop-after-fail <drop-after-fail>
-            ignore requests with the same response code multiple times in a row [default: 302,301]
+            ignore requests with the same response code multiple times in a row
 
-    -h, --help
-            Print help information
+            [default: 302,301]
 
         --int-status <int-status>
-            the internal web root status [default: 404,500]
+            the internal web root status
 
-    -o, --out <out>
-            The output file
+            [default: 404,500]
+
+        --pub-status <pub-status>
+            the public web root status
+
+            [default: 400]
 
     -p, --proxy <proxy>
             http proxy to use (eg http://127.0.0.1:8080)
 
-        --payloads <payloads>
-            the file containing the traversal payloads [default: ./payloads/traversals.txt]
+    -s, --skip-validation
+            this is used to bypass known protected endpoints using traversals
 
-        --pub-status <pub-status>
-            the public web root status [default: 400]
+    -c, --concurrency <concurrency>
+            The amount of concurrent requests
 
-    -r, --rate <rate>
-            Maximum in-flight requests per second [default: 1000]
-
-        --skip-brute <skip-brute>
-            skip the directory bruteforcing stage
+            [default: 1000]
 
         --timeout <timeout>
-            The delay between each request [default: 10]
+            The delay between each request
 
-    -u, --urls <urls>
-            the url you would like to test
+            [default: 10]
+
+        --header <header>
+            The header to insert into each request
+
+            [default: ]
+
+    -w, --workers <workers>
+            The amount of workers
+
+            [default: 10]
+
+        --payloads <payloads>
+            the file containing the traversal payloads
+
+            [default: ./payloads/traversals.txt]
+
+        --wordlist <wordlist>
+            the file containing the wordlist used for directory bruteforcing
+
+            [default: ./wordlists/wordlist.txt]
+
+    -o, --out <out>
+            The output file
+
+    -h, --help
+            Print help information
 
     -V, --version
             Print version information
-
-    -w, --workers <workers>
-            The amount of workers [default: 10]
-
-        --wordlist <wordlist>
-            the file containing the wordlist used for directory bruteforcing [default:
-            ./wordlists/wordlist.txt]
 ```
 
 ## Flags
@@ -139,7 +166,9 @@ OPTIONS:
 | --concurrency | number of threads to be used for processing |
 | --wordlist | the wordlist used for directory bruteforcing |
 | --proxy | http proxy to use (eg http://127.0.0.1:8080) |
+| --header | The header to insert into each request |
 | --skip-brute | use to skip the directory brute forcing stage |
+| --skip-validation | this is used to bypass known protected endpoints using traversals |
 | --out | save output to a file |
 | --help | prints help information |
 | --version | prints version information |
