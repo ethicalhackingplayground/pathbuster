@@ -25,3 +25,23 @@ rainbowcoat = "0.1.0"
 distance = "0.4.0"
 regex = "1.7.3"
 differ = "1.0.2"
+
+[profile.dev]
+opt-level = 0
+debug = true
+panic = "abort"
+
+[profile.test]
+opt-level = 0
+debug = true
+
+[profile.release]
+opt-level = 3
+debug = false
+panic = "unwind"
+lto = true
+codegen-units = 1
+
+[profile.bench]
+opt-level = 3
+debug = false
