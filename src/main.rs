@@ -31,18 +31,22 @@ mod utils;
 
 // our fancy ascii banner to make it look hackery :D
 fn print_banner() {
-    const BANNER: &str = r#"                             
+    let pathbuster_version = env!("CARGO_PKG_VERSION");
+    let banner = format!(
+        r#"                             
                  __  __    __               __           
     ____  ____ _/ /_/ /_  / /_  __  _______/ /____  _____
    / __ \/ __ `/ __/ __ \/ __ \/ / / / ___/ __/ _ \/ ___/
   / /_/ / /_/ / /_/ / / / /_/ / /_/ (__  ) /_/  __/ /    
  / .___/\__,_/\__/_/ /_/_.___/\__,_/____/\__/\___/_/     
 /_/                                                          
-                     v0.5.5
+                     v{}
                      ------
         path normalization pentesting tool                       
-    "#;
-    write!(&mut rainbowcoat::stdout(), "{}", BANNER).unwrap();
+    "#,
+        pathbuster_version
+    );
+    write!(&mut rainbowcoat::stdout(), "{}", banner).unwrap();
     println!(
         "{}{}{} {}",
         "[".bold().white(),
