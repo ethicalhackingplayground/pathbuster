@@ -564,7 +564,7 @@ pub async fn run_tester(
                         }
                     };
 
-                    let result_url = backonemore.clone();
+                    let result_url = backonemore;
                     let get = client.get(backonemore);
                     let mut request = match get.build() {
                         Ok(request) => request,
