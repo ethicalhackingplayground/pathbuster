@@ -1,7 +1,7 @@
 use std::{error::Error, process::exit, time::Duration};
 
 use colored::Colorize;
-use differ::{Differ, Tag};
+use difference::{Changeset, Difference};
 use governor::{Quota, RateLimiter};
 use indicatif::ProgressBar;
 use itertools::iproduct;
@@ -201,10 +201,13 @@ pub async fn run_bruteforcer(
         if ok && resp.status().as_str() == "200" {
             let internal_resp_text_lines = internal_resp_text.lines().collect::<Vec<_>>();
             let public_resp_text_lines = public_resp_text.lines().collect::<Vec<_>>();
-            let character_differences =
-                Differ::new(&internal_resp_text_lines, &public_resp_text_lines);
+            let changeset = Changeset::new(
+                &internal_resp_text_lines.join("\n"),
+                &public_resp_text_lines.join("\n"),
+                "",
+            );
 
-            if character_differences.spans().len() > 0 {
+            if !changeset.diffs.is_empty() {
                 pb.println(format!(
                     "\n{}{}{} {}",
                     "(".bold().white(),
@@ -212,29 +215,16 @@ pub async fn run_bruteforcer(
                     ")".bold().white(),
                     "found some response changes:".bold().green(),
                 ));
-                for span in character_differences.spans() {
-                    match span.tag {
-                        Tag::Equal => (),  // ignore
-                        Tag::Insert => (), // ignore
-                        Tag::Delete => (), // ignore
-                        Tag::Replace => {
-                            if span.b_end < internal_resp_text_lines.len() {
-                                for line in &internal_resp_text_lines[span.b_start..span.b_end] {
-                                    if line.to_string() == "" {
-                                        pb.println(format!("\n{}", line.bold().white(),));
-                                    } else {
-                                        pb.println(format!("{}", line.bold().white(),));
-                                    }
-                                }
-                            } else {
-                                for line in &internal_resp_text_lines[span.a_start..span.a_end] {
-                                    if line.to_string() == "" {
-                                        pb.println(format!("\n{}", line.bold().white(),));
-                                    } else {
-                                        pb.println(format!("{}", line.bold().white(),));
-                                    }
-                                }
-                            }
+                for diff in changeset.diffs {
+                    match diff {
+                        Difference::Same(_) => (), // ignore
+                        Difference::Add(text) => {
+                            // Add
+                            pb.println(format!("{}", text.bold().green()));
+                        }
+                        Difference::Rem(text) => {
+                            // Remove
+                            pb.println(format!("{}", text.bold().red()));
                         }
                     }
                 }
