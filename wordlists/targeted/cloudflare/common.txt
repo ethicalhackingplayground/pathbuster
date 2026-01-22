@@ -1,0 +1,5 @@
+cdn-cgi
+cdn-cgi/trace
+cdn-cgi/l/captcha
+robots.txt
+internal/lab1/flag

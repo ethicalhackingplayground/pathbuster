@@ -1,0 +1,9 @@
+admin
+api
+debug
+health
+login
+metrics
+status
+v1
+v2

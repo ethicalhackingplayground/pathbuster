@@ -1,0 +1,70 @@
+# Pathbuster config
+#
+# Location (default):
+#   ~/.pathbuster/config.yml
+
+# Targets (choose at least one)
+# urls:
+#   - https://example.com/app/
+# input_file: ./targets.txt
+
+# Output (optional)
+# output: ./output.html
+# output_format: html
+
+# Performance
+rate: 1000
+concurrency: 1000
+timeout: 10
+workers: 10
+
+# Input
+payloads: ./payloads/traversals.txt
+wordlist: ./wordlists/wordlist.txt
+# extensions: php,asp
+# dirsearch_compat: false
+wordlist_dir: ./wordlists/targeted
+
+# HTTP (optional)
+# proxy: http://127.0.0.1:8080
+# header: "Key: Value"
+# methods: GET,POST
+follow_redirects: false
+
+# Matching
+drop_after_fail: "302,301"
+validate_status: "404"
+fingerprint_status: "400,500"
+
+# Response difference threshold range used by validation/bruteforce comparisons.
+# CLI equivalent: --response-diff-threshold MIN-MAX
+response_diff_threshold: "5-1000"
+
+# Filters (stage prefixes: V:<set> and/or F:<set>, or unprefixed applies to both)
+filter_status: ""
+filter_size: ""
+filter_words: ""
+filter_lines: ""
+filter_regex: []
+
+# Traversal
+start_depth: 0
+max_depth: 5
+traversal_strategy: greedy
+
+ignore_trailing_slash: false
+skip_validation: false
+skip_brute: false
+
+# Fingerprinting
+disable_fingerprinting: false
+# waf_test: cloudflare
+# tech: php
+
+# Output styling
+no_color: false
+
+# Bypass
+disable_waf_bypass: false
+bypass_level: 1
+bypass_transform: []

@@ -2,7 +2,7 @@
 name = "pathbuster"
 authors = ["zoid", "<krypt0mux@gmail.com>"]
 description = "A path-normalization pentesting tool."
-version = "0.5.5"
+version = "0.5.6"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/ethicalhackingplayground/pathbuster"
@@ -16,12 +16,25 @@ itertools = "0.10.5"
 futures = "0.3.26"
 futures-util = "0.3.26"
 tokio = { version = "^1.2.0", features = ["full"] }
+tokio02 = { package = "tokio", version = "0.2", features = ["full"] }
 colored = { version = "2.0.0" }
 indicatif = "0.17.3"
 spmc = "0.3.0"
-clap =  { version = "^3.0.0-beta.2" }
+clap = { version = "4", features = ["derive"] }
 reqwest = { version = "0.11.14", features = ["native-tls", "blocking"] }
 rainbowcoat = "0.1.0"
 distance = "0.4.0"
 regex = "1.7.3"
 difference = "2.0.0"
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+serde_json = "1"
+wappalyzer = "0.1.0"
+thiserror = "1"
+
+[target.'cfg(unix)'.dev-dependencies]
+pprof = { version = "0.13", features = ["flamegraph"] }
+
+[lib]
+name = "pathbuster"
+path = "src/lib.rs"

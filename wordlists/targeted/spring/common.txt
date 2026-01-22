@@ -1,0 +1,10 @@
+actuator
+actuator/health
+actuator/info
+admin
+api
+health
+login
+swagger-ui
+v1
+v2

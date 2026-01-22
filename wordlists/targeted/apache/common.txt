@@ -1,0 +1,14 @@
+admin
+api
+assets
+backup
+config
+console
+debug
+health
+login
+logs
+server-status
+status
+v1
+v2

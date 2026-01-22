@@ -1,0 +1,12 @@
+admin
+api
+aspnet_client
+bin
+config
+debug
+health
+login
+logs
+web.config
+v1
+v2

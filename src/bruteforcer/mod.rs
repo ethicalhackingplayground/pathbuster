@@ -1,12 +1,12 @@
-use std::{error::Error, process::exit, time::Duration};
+use std::collections::{HashMap, HashSet};
+use std::{error::Error, time::Duration};
 
 use colored::Colorize;
-use difference::{Changeset, Difference};
 use governor::{Quota, RateLimiter};
 use indicatif::ProgressBar;
-use itertools::iproduct;
 use reqwest::{redirect, Proxy};
-use tokio::{fs::File, io::AsyncWriteExt, sync::mpsc};
+use tokio::sync::mpsc;
+use tokio::time::Instant;
 
 use crate::utils;
 
@@ -25,28 +25,42 @@ pub struct BruteJob {
     pub word: Option<String>,
 }
 
-// this asynchronous function will send the results to another set of workers
-// for each worker to perform a directory brute force operation on each url.
-pub async fn send_word_to_url(
-    mut tx: spmc::Sender<BruteJob>,
-    urls: Vec<String>,
+#[derive(Clone, Debug)]
+pub struct BruteforcerConfig {
+    pub timeout: usize,
+    pub http_proxy: String,
+    pub sift3_threshold: utils::ResponseChangeThreshold,
+    pub follow_redirects: bool,
+    pub methods: Vec<reqwest::Method>,
+    pub auto_collab: bool,
+    pub validate_status: HashSet<u16>,
+    pub wordlist_status: HashSet<u16>,
+}
+
+pub async fn send_word_to_url_queue(
+    tx: mpsc::Sender<BruteJob>,
+    mut discoveries: mpsc::Receiver<String>,
     wordlists: Vec<String>,
     rate: u32,
 ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
-    //set rate limit
-    let lim = RateLimiter::direct(Quota::per_second(std::num::NonZeroU32::new(rate).unwrap()));
-
-    // start the scan
-    for (word, url) in iproduct!(wordlists, urls) {
-        let url_cp = url.clone();
-        let msg = BruteJob {
-            url: Some(url_cp),
-            word: Some(word.clone()),
-        };
-        if let Err(_) = tx.send(msg) {
+    let lim = RateLimiter::direct(Quota::per_second(
+        std::num::NonZeroU32::new(rate).unwrap_or(std::num::NonZeroU32::MIN),
+    ));
+    let mut seen: HashSet<String> = HashSet::new();
+    while let Some(url) = discoveries.recv().await {
+        if !seen.insert(url.clone()) {
             continue;
         }
-        lim.until_ready().await;
+        for word in wordlists.iter() {
+            let msg = BruteJob {
+                url: Some(url.clone()),
+                word: Some(word.clone()),
+            };
+            if tx.send(msg).await.is_err() {
+                return Ok(());
+            }
+            lim.until_ready().await;
+        }
     }
     Ok(())
 }
@@ -54,11 +68,20 @@ pub async fn send_word_to_url(
 // runs the directory bruteforcer on the job
 pub async fn run_bruteforcer(
     pb: ProgressBar,
-    rx: spmc::Receiver<BruteJob>,
+    mut rx: mpsc::Receiver<BruteJob>,
     tx: mpsc::Sender<BruteResult>,
-    timeout: usize,
-    http_proxy: String,
+    config: BruteforcerConfig,
 ) -> BruteResult {
+    let BruteforcerConfig {
+        timeout,
+        http_proxy,
+        sift3_threshold,
+        follow_redirects,
+        methods,
+        auto_collab,
+        validate_status,
+        wordlist_status,
+    } = config;
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert(
         reqwest::header::USER_AGENT,
@@ -67,209 +90,390 @@ pub async fn run_bruteforcer(
         ),
     );
 
-    let client;
-    if http_proxy.is_empty() {
-        //no certs
-        client = reqwest::Client::builder()
-            .default_headers(headers)
-            .redirect(redirect::Policy::none())
-            .timeout(Duration::from_secs(timeout.try_into().unwrap()))
-            .danger_accept_invalid_hostnames(true)
-            .danger_accept_invalid_certs(true)
-            .build()
-            .unwrap();
+    let timeout = Duration::from_secs(timeout as u64);
+    let redirect_policy = if follow_redirects {
+        redirect::Policy::limited(10)
     } else {
-        let proxy = match Proxy::all(http_proxy) {
-            Ok(proxy) => proxy,
-            Err(e) => {
-                pb.println(format!("Could not setup proxy, err: {:?}", e));
-                exit(1);
+        redirect::Policy::none()
+    };
+    let mut client_builder = reqwest::Client::builder()
+        .default_headers(headers)
+        .redirect(redirect_policy)
+        .timeout(timeout)
+        .danger_accept_invalid_hostnames(true)
+        .danger_accept_invalid_certs(true);
+
+    if !http_proxy.is_empty() {
+        match Proxy::all(&http_proxy) {
+            Ok(proxy) => {
+                client_builder = client_builder.proxy(proxy);
             }
-        };
-        //no certs
-        client = reqwest::Client::builder()
-            .default_headers(headers)
-            .redirect(redirect::Policy::none())
-            .timeout(Duration::from_secs(timeout.try_into().unwrap()))
-            .danger_accept_invalid_hostnames(true)
-            .danger_accept_invalid_certs(true)
-            .proxy(proxy)
-            .build()
-            .unwrap();
+            Err(e) => {
+                let _ = e;
+                return BruteResult {
+                    data: String::new(),
+                    rs: String::new(),
+                };
+            }
+        }
     }
 
-    while let Ok(job) = rx.recv() {
-        let job_url = job.url.unwrap();
-        let job_word = job.word.unwrap();
-        let job_url_new = job_url.clone();
+    let client = match client_builder.build() {
+        Ok(client) => client,
+        Err(e) => {
+            let _ = e;
+            return BruteResult {
+                data: String::new(),
+                rs: String::new(),
+            };
+        }
+    };
+
+    struct MatchLine<'a> {
+        stage: &'a str,
+        url: &'a str,
+        status: u16,
+        size: usize,
+        words: usize,
+        lines: usize,
+        diff_value: Option<f32>,
+        duration_ms: u128,
+        server: &'a str,
+    }
+
+    fn format_match_line(args: MatchLine<'_>) -> String {
+        let status = match args.status {
+            200..=299 => args.status.to_string().green(),
+            300..=399 => args.status.to_string().blue(),
+            400..=499 => args.status.to_string().truecolor(255, 165, 0),
+            500..=599 => args.status.to_string().red(),
+            _ => args.status.to_string().white(),
+        };
+        let diff_value = args
+            .diff_value
+            .map(|d| format!("{d:.1}"))
+            .unwrap_or_else(|| "n/a".to_string());
+        format!(
+            "URL: {} \n\t| [Stage: {}, Status: {}, Size: {}, Words: {}, Lines: {}, DiffThr: {}, Duration: {}ms, Server: {}]\n",
+            args.url,
+            args.stage,
+            status,
+            args.size,
+            args.words,
+            args.lines,
+            diff_value,
+            args.duration_ms,
+            args.server
+        )
+    }
+
+    let mut last_result = BruteResult {
+        data: String::new(),
+        rs: String::new(),
+    };
+    let methods = if methods.is_empty() {
+        vec![reqwest::Method::GET]
+    } else {
+        methods
+    };
+
+    let mut noise_sizes_by_base: HashMap<String, Vec<usize>> = HashMap::new();
+    let mut baseline_validate_by_base_method: HashMap<(String, String), String> = HashMap::new();
+    let mut baseline_probe_by_base_method: HashMap<(String, String), String> = HashMap::new();
+    let probes = 3usize;
+    let internal_probe_word = "pathbuster-diff-probe-8f59c2d6a5e54b0bb8f3";
+
+    fn normalize_word(word: &str) -> Option<String> {
+        let w = word.trim().trim_start_matches('/').to_string();
+        if w.is_empty() {
+            None
+        } else {
+            Some(w)
+        }
+    }
+
+    fn build_internal_url(base_url: &str, word: &str) -> String {
+        let ends_with_encoded_slash = base_url.ends_with("%2f") || base_url.ends_with("%2F");
+        let mut out = if base_url.ends_with('/') || ends_with_encoded_slash {
+            base_url.to_string()
+        } else {
+            format!("{base_url}/")
+        };
+        out.push_str(word);
+        out
+    }
+
+    fn build_web_root_url(parsed: &reqwest::Url, word: &str) -> Option<String> {
+        let schema = parsed.scheme();
+        let host = parsed.host_str()?;
+        let host = if let Some(port) = parsed.port() {
+            format!("{host}:{port}")
+        } else {
+            host.to_string()
+        };
+        Some(format!("{schema}://{host}/{word}"))
+    }
+
+    while let Some(job) = rx.recv().await {
+        let (Some(job_url), Some(job_word)) = (job.url, job.word) else {
+            continue;
+        };
+        let base_url = job_url.clone();
+        let Some(word) = normalize_word(&job_word) else {
+            continue;
+        };
+        if word.is_empty() {
+            continue;
+        }
         pb.inc(1);
-        let mut web_root_url: String = String::from("");
-        let mut internal_web_root_url: String = String::from(job_url);
-        let url = match reqwest::Url::parse(&job_url_new) {
+        let url = match reqwest::Url::parse(&base_url) {
             Ok(url) => url,
-            Err(_) => {
-                continue;
-            }
-        };
-
-        let schema = url.scheme().to_string();
-        let host = match url.host_str() {
-            Some(host) => host,
-            None => continue,
-        };
-
-        web_root_url.push_str(&schema);
-        web_root_url.push_str("://");
-        web_root_url.push_str(&host);
-        web_root_url.push_str("/");
-        web_root_url.push_str(&job_word);
-
-        internal_web_root_url.push_str(&job_word);
-        let internal_url = internal_web_root_url.clone();
-        let internal_web_url = internal_url.clone();
-
-        pb.set_message(format!(
-            "{} {}",
-            "directory bruteforcing ::".bold().white(),
-            internal_url.bold().blue(),
-        ));
-
-        let internal_url = internal_web_url.clone();
-        let get = client.get(internal_web_url);
-        let internal_get = client.get(internal_web_root_url);
-        let public_get = client.get(web_root_url);
-
-        let public_req = match public_get.build() {
-            Ok(req) => req,
-            Err(_) => {
-                continue;
-            }
-        };
-
-        let internal_req = match internal_get.build() {
-            Ok(req) => req,
-            Err(_) => {
-                continue;
-            }
-        };
-
-        let public_resp = match client.execute(public_req).await {
-            Ok(public_resp) => public_resp,
-            Err(_) => {
-                continue;
-            }
-        };
-
-        let internal_resp = match client.execute(internal_req).await {
-            Ok(internal_resp) => internal_resp,
-            Err(_) => {
-                continue;
-            }
-        };
-
-        let public_resp_text = match public_resp.text().await {
-            Ok(public_resp_text) => public_resp_text,
             Err(_) => continue,
         };
-
-        let internal_resp_text = match internal_resp.text().await {
-            Ok(internal_resp_text) => internal_resp_text,
-            Err(_) => continue,
+        let Some(web_root_url) = build_web_root_url(&url, &word) else {
+            continue;
         };
+        let internal_url = build_internal_url(&base_url, &word);
+        pb.set_message(internal_url.clone());
 
-        let req = match get.build() {
-            Ok(req) => req,
-            Err(_) => {
+        if auto_collab && !noise_sizes_by_base.contains_key(&base_url) {
+            let mut sizes: Vec<usize> = Vec::new();
+            for i in 0..probes {
+                let probe_url = format!("{base_url}pathbuster-ac-{i}");
+                let resp = client.get(probe_url).send().await.ok();
+                let size = if let Some(resp) = resp {
+                    resp.bytes().await.ok().map(|b| b.len())
+                } else {
+                    None
+                };
+                if let Some(size) = size {
+                    sizes.push(size);
+                }
+            }
+            let mut filtered: HashSet<usize> = HashSet::new();
+            for i in 0..sizes.len() {
+                for j in (i + 1)..sizes.len() {
+                    let (similar, _) = utils::sift3_distance_in_range(
+                        &sizes[i].to_string(),
+                        &sizes[j].to_string(),
+                        sift3_threshold,
+                    );
+                    if similar {
+                        filtered.insert(sizes[i]);
+                        filtered.insert(sizes[j]);
+                    }
+                }
+            }
+            noise_sizes_by_base.insert(base_url.clone(), filtered.into_iter().collect());
+        }
+
+        for method in methods.iter() {
+            let req = match client.request(method.clone(), internal_url.clone()).build() {
+                Ok(req) => req,
+                Err(_) => continue,
+            };
+
+            let start = Instant::now();
+            let resp = match client.execute(req).await {
+                Ok(resp) => resp,
+                Err(_) => continue,
+            };
+            let duration_ms = start.elapsed().as_millis();
+
+            let resp_status = resp.status().as_u16();
+            let server = resp
+                .headers()
+                .get("server")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("Unknown")
+                .to_string();
+            let _content_type = resp
+                .headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("")
+                .to_string();
+            let resp_body_bytes = match resp.bytes().await {
+                Ok(body) => body.to_vec(),
+                Err(_) => continue,
+            };
+            let resp_body = String::from_utf8_lossy(&resp_body_bytes);
+            let size = resp_body_bytes.len();
+            let words = resp_body.split_whitespace().count();
+            let lines = resp_body.lines().count();
+
+            if !wordlist_status.is_empty() && !wordlist_status.contains(&resp_status) {
                 continue;
             }
-        };
 
-        let resp = match client.execute(req).await {
-            Ok(resp) => resp,
-            Err(_) => {
+            if auto_collab {
+                if let Some(noise) = noise_sizes_by_base.get(&base_url) {
+                    let is_noise = noise.iter().any(|n| {
+                        let (similar, _) = utils::sift3_distance_in_range(
+                            &size.to_string(),
+                            &n.to_string(),
+                            sift3_threshold,
+                        );
+                        similar
+                    });
+                    if is_noise {
+                        continue;
+                    }
+                }
+            }
+
+            let public_resp = match client
+                .request(method.clone(), web_root_url.clone())
+                .send()
+                .await
+            {
+                Ok(public_resp) => public_resp,
+                Err(_) => continue,
+            };
+            let public_resp_text = match public_resp.text().await {
+                Ok(public_resp_text) => public_resp_text,
+                Err(_) => continue,
+            };
+            let (diff_public_ok, _) =
+                utils::get_response_change(resp_body.as_ref(), &public_resp_text, sift3_threshold);
+            if !diff_public_ok {
                 continue;
             }
-        };
 
-        let content_length = match resp.content_length() {
-            Some(content_length) => content_length.to_string(),
-            None => "".to_string(),
-        };
+            if validate_status.contains(&resp_status) {
+                let method_key = method.as_str().to_string();
 
-        let (ok, distance_between_responses) =
-            utils::get_response_change(&internal_resp_text, &public_resp_text);
-        if ok && resp.status().as_str() == "200" {
-            let internal_resp_text_lines = internal_resp_text.lines().collect::<Vec<_>>();
-            let public_resp_text_lines = public_resp_text.lines().collect::<Vec<_>>();
-            let changeset = Changeset::new(
-                &internal_resp_text_lines.join("\n"),
-                &public_resp_text_lines.join("\n"),
-                "",
-            );
+                let validate_key = (base_url.clone(), method_key.clone());
+                if !baseline_validate_by_base_method.contains_key(&validate_key) {
+                    let baseline_text = match client
+                        .request(method.clone(), base_url.clone())
+                        .send()
+                        .await
+                    {
+                        Ok(resp) => resp.text().await.ok(),
+                        Err(_) => None,
+                    };
+                    if let Some(text) = baseline_text {
+                        baseline_validate_by_base_method.insert(validate_key.clone(), text);
+                    }
+                }
 
-            if !changeset.diffs.is_empty() {
-                pb.println(format!(
-                    "\n{}{}{} {}",
-                    "(".bold().white(),
-                    "*".bold().blue(),
-                    ")".bold().white(),
-                    "found some response changes:".bold().green(),
-                ));
-                for diff in changeset.diffs {
-                    match diff {
-                        Difference::Same(_) => (), // ignore
-                        Difference::Add(text) => {
-                            // Add
-                            pb.println(format!("{}", text.bold().green()));
+                if let Some(validate_body) = baseline_validate_by_base_method.get(&validate_key) {
+                    if !validate_body.is_empty() {
+                        let (ok, _) = utils::get_response_change(
+                            resp_body.as_ref(),
+                            validate_body,
+                            sift3_threshold,
+                        );
+                        if !ok {
+                            continue;
                         }
-                        Difference::Rem(text) => {
-                            // Remove
-                            pb.println(format!("{}", text.bold().red()));
+                    }
+                }
+
+                let probe_key = (base_url.clone(), method_key.clone());
+                if !baseline_probe_by_base_method.contains_key(&probe_key) {
+                    let probe_url = build_internal_url(&base_url, internal_probe_word);
+                    let probe_text = match client.request(method.clone(), probe_url).send().await {
+                        Ok(resp) => resp.text().await.ok(),
+                        Err(_) => None,
+                    };
+                    if let Some(text) = probe_text {
+                        baseline_probe_by_base_method.insert(probe_key.clone(), text);
+                    }
+                }
+
+                if let Some(probe_body) = baseline_probe_by_base_method.get(&probe_key) {
+                    if !probe_body.is_empty() {
+                        let (ok, _) = utils::get_response_change(
+                            resp_body.as_ref(),
+                            probe_body,
+                            sift3_threshold,
+                        );
+                        if !ok {
+                            continue;
                         }
                     }
                 }
             }
-            pb.println(format!("\n"));
-            pb.println(format!(
-                "{} {}{}{} {} {}",
-                "found something interesting".bold().green(),
-                "(".bold().white(),
-                distance_between_responses.to_string().bold().white(),
-                ")".bold().white(),
-                "deviations from webroot ::".bold().white(),
-                internal_url.bold().blue(),
-            ));
 
-            // send the result message through the channel to the workers.
-            let result_msg = BruteResult {
-                data: internal_url.to_owned(),
-                rs: content_length,
-            };
-            let result = result_msg.clone();
-            if let Err(_) = tx.send(result_msg).await {
-                continue;
+            {
+                let method_key = method.as_str().to_string();
+                let lookup_key = (base_url.clone(), method_key);
+                let diff_value = if let Some(baseline_body) =
+                    baseline_validate_by_base_method.get(&lookup_key)
+                {
+                    if baseline_body.is_empty() {
+                        None
+                    } else {
+                        Some(utils::sift3_distance(resp_body.as_ref(), baseline_body))
+                    }
+                } else if let Some(probe_body) = baseline_probe_by_base_method.get(&lookup_key) {
+                    if probe_body.is_empty() {
+                        None
+                    } else {
+                        Some(utils::sift3_distance(resp_body.as_ref(), probe_body))
+                    }
+                } else if !public_resp_text.is_empty() {
+                    Some(utils::sift3_distance(resp_body.as_ref(), &public_resp_text))
+                } else {
+                    None
+                };
+                pb.println(format_match_line(MatchLine {
+                    stage: "bruteforce",
+                    url: &internal_url,
+                    status: resp_status,
+                    size,
+                    words,
+                    lines,
+                    diff_value,
+                    duration_ms,
+                    server: &server,
+                }));
+
+                let result_msg = BruteResult {
+                    data: internal_url.to_owned(),
+                    rs: size.to_string(),
+                };
+                let result = result_msg.clone();
+                if tx.send(result_msg).await.is_err() {
+                    continue;
+                }
+                pb.inc_length(1);
+                last_result = result;
+                break;
             }
-            pb.inc_length(1);
-            return result;
         }
     }
-    return BruteResult {
-        data: "".to_string(),
-        rs: "".to_string(),
-    };
+    last_result
 }
 
-// Saves the output to a file
-pub async fn save_discoveries(
-    _: ProgressBar,
-    mut outfile: File,
-    mut brx: mpsc::Receiver<BruteResult>,
-) {
-    while let Some(result) = brx.recv().await {
-        let mut outbuf = result.data.as_bytes().to_owned();
-        outbuf.extend_from_slice(b"\n");
-        if let Err(_) = outfile.write(&outbuf).await {
-            continue;
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn build_internal_url_preserves_encoded_slash_boundary() {
+        fn build_internal_url(base_url: &str, word: &str) -> String {
+            let ends_with_encoded_slash = base_url.ends_with("%2f") || base_url.ends_with("%2F");
+            let mut out = if base_url.ends_with('/') || ends_with_encoded_slash {
+                base_url.to_string()
+            } else {
+                format!("{base_url}/")
+            };
+            out.push_str(word);
+            out
         }
+
+        assert_eq!(
+            build_internal_url("http://localhost:8081/static/..%2f", "internal/lab1/flag"),
+            "http://localhost:8081/static/..%2finternal/lab1/flag"
+        );
+        assert_eq!(
+            build_internal_url("http://localhost:8081/static/../", "internal/lab1/flag"),
+            "http://localhost:8081/static/../internal/lab1/flag"
+        );
+        assert_eq!(
+            build_internal_url("http://localhost:8081/static", "internal/lab1/flag"),
+            "http://localhost:8081/static/internal/lab1/flag"
+        );
     }
 }

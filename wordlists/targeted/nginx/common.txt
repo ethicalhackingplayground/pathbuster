@@ -1,0 +1,17 @@
+admin
+api
+assets
+backup
+config
+console
+debug
+health
+login
+logs
+nginx_status
+robots.txt
+server-status
+static
+status
+v1
+v2

@@ -1,0 +1,10 @@
+admin
+api
+config
+debug
+health
+index.php
+login
+phpinfo.php
+v1
+v2
