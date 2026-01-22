@@ -10,21 +10,9 @@ repository = "https://github.com/ethicalhackingplayground/pathbuster"
 include = [
     "src/**",
     "Cargo.toml",
-    "README.md",
+    "/README.md",
     "LICENSE*",
-    "static/**",
     "examples/**",
-]
-
-exclude = [
-    "target/**",
-    ".git/**",
-    ".github/**",
-    "wordlists/**",
-    "payloads/**",
-    "playground/**",
-    ".trae/**",
-    ".vscode/**",
 ]
 
 
