@@ -7,6 +7,26 @@ edition = "2021"
 license = "MIT"
 repository = "https://github.com/ethicalhackingplayground/pathbuster"
 
+include = [
+    "src/**",
+    "Cargo.toml",
+    "README.md",
+    "LICENSE*",
+    "static/**",
+    "examples/**",
+]
+
+exclude = [
+    "target/**",
+    ".git/**",
+    ".github/**",
+    "wordlists/**",
+    "payloads/**",
+    "playground/**",
+    ".trae/**",
+    ".vscode/**",
+]
+
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -38,22 +58,3 @@ pprof = { version = "0.13", features = ["flamegraph"] }
 [lib]
 name = "pathbuster"
 path = "src/lib.rs"
-
-include = [
-    "src/**",
-    "Cargo.toml",
-    "README.md",
-    "LICENSE*",
-    "static/**",
-    "examples/**",
-]
-
-exclude = [
-    "target/**",
-    ".git/**",
-    ".github/**",
-    "wordlists/**",
-    "playground/**",
-    ".trae/**",
-    ".vscode/**",
-]
