@@ -6,4 +6,8 @@ target
 *.log
 *.swp
 *.tmp
-**/node_modules
+wordlists/
+playground/
+.trae
+.vscode
+
