@@ -1,29 +1,55 @@
-name: Rust
+name: Rust Release
 
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+  release:
+    types: [published]
 
 env:
   CARGO_TERM_COLOR: always
+  # Force vendored OpenSSL so cross builds don’t fail
+  OPENSSL_STATIC: 1
+  OPENSSL_VENDORED: 1
 
 jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         target:
           - x86_64-unknown-linux-gnu
-          - x86_64-pc-windows-gnu
           - aarch64-unknown-linux-gnu
+          - x86_64-pc-windows-gnu
+
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           target: ${{ matrix.target }}
           override: true
-      - run: cargo install cross --git https://github.com/cross-rs/cross
-      - run: cross build --target ${{ matrix.target }} --release   
+
+      - name: Install cross
+        run: cargo install cross --locked
+
+      - name: Build
+        run: cross build --release --target ${{ matrix.target }}
+
+      - name: Prepare artifact
+        run: |
+          mkdir -p dist
+          if [[ "${{ matrix.target }}" == *windows* ]]; then
+            cp target/${{ matrix.target }}/release/*.exe dist/
+          else
+            cp target/${{ matrix.target }}/release/* dist/
+          fi
+
+      - name: Upload to latest release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
