@@ -1,0 +1,12 @@
+target/
+.git/
+.github/
+tests/
+fuzz/
+examples/
+docs/
+*.pcap
+*.zip
+*.tar
+*.gz
+*.exe

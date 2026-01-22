@@ -38,3 +38,18 @@ pprof = { version = "0.13", features = ["flamegraph"] }
 [lib]
 name = "pathbuster"
 path = "src/lib.rs"
+
+exclude = [
+    "target/*",
+    ".git/*",
+    ".github/*",
+    "tests/*",
+    "fuzz/*",
+    "examples/*",
+    "docs/*",
+    "*.pcap",
+    "*.zip",
+    "*.tar",
+    "*.gz",
+    "*.exe",
+]
