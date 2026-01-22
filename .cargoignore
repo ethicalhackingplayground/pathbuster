@@ -1,12 +1,9 @@
 target/
 .git/
 .github/
-tests/
-fuzz/
 examples/
-docs/
-*.pcap
-*.zip
-*.tar
-*.gz
-*.exe
+wordlists/
+payloads/
+.vscode/
+.trae/
+playground/
