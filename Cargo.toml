@@ -9,10 +9,10 @@ repository = "https://github.com/ethicalhackingplayground/pathbuster"
 
 include = [
     "src/**",
-    "Cargo.toml",
     "/README.md",
     "LICENSE*",
     "examples/**",
+    "/static",
 ]
 
 
