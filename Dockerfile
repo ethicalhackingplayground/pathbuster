@@ -4,7 +4,7 @@ WORKDIR /app
 COPY . .
 RUN cargo build --release
 
-FROM debian:bookworm-slim
+FROM debian:stable-slim
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates libssl3 \

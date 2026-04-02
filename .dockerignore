@@ -6,7 +6,6 @@ target
 *.log
 *.swp
 *.tmp
-wordlists/
 playground/
 .trae
 .vscode
